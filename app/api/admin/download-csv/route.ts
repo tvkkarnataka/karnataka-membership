@@ -1,7 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { 
+  Document, 
+  Packer, 
+  Paragraph, 
+  Table, 
+  TableCell, 
+  TableRow, 
+  WidthType, 
+  AlignmentType, 
+  HeadingLevel, 
+  TextRun, 
+  ShadingType 
+} from 'docx';
 
-// Initialize Supabase with admin privileges using the Service Role Key
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -13,13 +25,13 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const secret = searchParams.get('secret');
 
-  // 1. Verify Secret Key
+  // 1. Verify Secret Passcode
   if (!secret || secret !== ADMIN_SECRET) {
     return new NextResponse('Unauthorized: Invalid or missing secret key.', { status: 401 });
   }
 
   try {
-    // 2. Query members from database
+    // 2. Fetch all members from Supabase
     const { data: members, error } = await supabaseAdmin
       .from('members')
       .select('*')
@@ -33,55 +45,135 @@ export async function GET(req: NextRequest) {
       return new NextResponse('No registered members found.', { status: 404 });
     }
 
-    // 3. Convert records to CSV format
-    const headers = [
-      'Sl No',
-      'Membership ID',
-      'Full Name',
-      'Phone',
-      'Date of Birth',
-      'District',
-      'VMI Experience (Years)',
-      'Team Name',
-      'Coordinator',
-      'Registration Date'
-    ];
-
-    const escapeCsvField = (field: any) => {
-      const stringValue = String(field ?? '');
-      return `"${stringValue.replace(/"/g, '""')}"`;
+    // 3. Build Word Table
+    const createHeaderCell = (text: string, widthPercent: number) => {
+      return new TableCell({
+        width: { size: widthPercent, type: WidthType.PERCENTAGE },
+        shading: { type: ShadingType.CLEAR, fill: 'DC2626' },
+        children: [
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            children: [
+              new TextRun({ text, bold: true, color: 'FFFFFF', size: 18, font: 'Calibri' })
+            ],
+          }),
+        ],
+      });
     };
 
-    const csvRows = [headers.join(',')];
+    const createDataCell = (
+      text: string, 
+      widthPercent: number, 
+      align: (typeof AlignmentType)[keyof typeof AlignmentType] = AlignmentType.LEFT
+    ) => {
+      return new TableCell({
+        width: { size: widthPercent, type: WidthType.PERCENTAGE },
+        children: [
+          new Paragraph({
+            alignment: align,
+            children: [
+              new TextRun({ text: text || 'N/A', size: 18, font: 'Calibri' })
+            ],
+          }),
+        ],
+      });
+    };
 
-    members.forEach((m, idx) => {
-      const row = [
-        idx + 1,
-        escapeCsvField(m.membership_id),
-        escapeCsvField(m.full_name),
-        escapeCsvField(m.phone),
-        escapeCsvField(m.dob),
-        escapeCsvField(m.district),
-        escapeCsvField(m.vmi_experience),
-        escapeCsvField(m.team_name),
-        escapeCsvField(m.coordinator),
-        escapeCsvField(m.created_at)
-      ];
-      csvRows.push(row.join(','));
+    const headerRow = new TableRow({
+      tableHeader: true,
+      children: [
+        createHeaderCell('Sl No', 6),
+        createHeaderCell('Member ID', 14),
+        createHeaderCell('Full Name', 18),
+        createHeaderCell('Phone', 13),
+        createHeaderCell('DOB', 11),
+        createHeaderCell('District', 13),
+        createHeaderCell('VMI Exp', 7),
+        createHeaderCell('Team', 9),
+        createHeaderCell('Coordinator', 9),
+      ],
     });
 
-    const csvContent = csvRows.join('\n');
+    const dataRows = members.map((m, index) => {
+      return new TableRow({
+        children: [
+          createDataCell(String(index + 1), 6, AlignmentType.CENTER),
+          createDataCell(m.membership_id, 14, AlignmentType.CENTER),
+          createDataCell(m.full_name, 18),
+          createDataCell(m.phone, 13),
+          createDataCell(m.dob, 11, AlignmentType.CENTER),
+          createDataCell(m.district, 13),
+          createDataCell(`${m.vmi_experience} yr`, 7, AlignmentType.CENTER),
+          createDataCell(m.team_name, 9),
+          createDataCell(m.coordinator, 9),
+        ],
+      });
+    });
 
-    // 4. Return as a downloadable CSV file
+    // 4. Create Document
+    const doc = new Document({
+      sections: [
+        {
+          properties: {
+            page: { margin: { top: 720, right: 720, bottom: 720, left: 720 } },
+          },
+          children: [
+            new Paragraph({
+              text: 'TVK KARNATAKA REGISTRATION DRIVE',
+              heading: HeadingLevel.TITLE,
+              alignment: AlignmentType.CENTER,
+              spacing: { after: 120 },
+              run: { bold: true, color: 'DC2626', size: 26, font: 'Calibri' },
+            }),
+            new Paragraph({
+              alignment: AlignmentType.CENTER,
+              spacing: { after: 200 },
+              children: [
+                new TextRun({
+                  text: `Official Member Registry Report | Total Members: ${members.length}`,
+                  italics: true,
+                  size: 19,
+                  color: '4B5563',
+                  font: 'Calibri',
+                }),
+              ],
+            }),
+            new Table({
+              width: { size: 100, type: WidthType.PERCENTAGE },
+              rows: [headerRow, ...dataRows],
+            }),
+            new Paragraph({
+              spacing: { before: 200 },
+              alignment: AlignmentType.RIGHT,
+              children: [
+                new TextRun({
+                  text: `Generated on: ${new Date().toLocaleDateString('en-IN')}`,
+                  size: 15,
+                  color: '9CA3AF',
+                  font: 'Calibri',
+                }),
+              ],
+            }),
+          ],
+        },
+      ],
+    });
+
+    // 5. Convert document to buffer
+    const buffer = await Packer.toBuffer(doc);
     const dateStamp = new Date().toISOString().split('T')[0];
-    return new NextResponse(csvContent, {
+
+    // 6. Return response with DOCX Content-Type
+    return new NextResponse(buffer as unknown as BodyInit, {
       status: 200,
       headers: {
-        'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="TVK_Members_${dateStamp}.csv"`,
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'Content-Disposition': `attachment; filename="TVK_Members_Registry_${dateStamp}.docx"`,
       },
     });
-  } catch (err: any) {
-    return new NextResponse(`Server error: ${err.message}`, { status: 500 });
+
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+    return new NextResponse(`Server error: ${errorMsg}`, { status: 500 });
   }
 }
