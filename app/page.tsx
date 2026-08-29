@@ -11,8 +11,7 @@ import {
   AlertCircle, 
   Download, 
   Users, 
-  UserCog, 
-  Award 
+  UserCog 
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 
@@ -37,7 +36,6 @@ interface MemberData {
   phone: string;
   dob: string;
   district: string;
-  vmiExperience: number;
   teamName: string;
   coordinator: string;
 }
@@ -52,7 +50,6 @@ export default function MembershipDrive() {
   const [phone, setPhone] = useState('');
   const [dob, setDob] = useState('');
   const [district, setDistrict] = useState('');
-  const [vmiExperience, setVmiExperience] = useState('');
   const [teamName, setTeamName] = useState('');
   const [coordinator, setCoordinator] = useState('');
   const [registeredMember, setRegisteredMember] = useState<MemberData | null>(null);
@@ -70,7 +67,6 @@ export default function MembershipDrive() {
     setPhone('');
     setDob('');
     setDistrict('');
-    setVmiExperience('');
     setTeamName('');
     setCoordinator('');
     setRegisteredMember(null);
@@ -102,7 +98,6 @@ export default function MembershipDrive() {
           phone, 
           dob, 
           district,   
-          vmiExperience: Number(vmiExperience) || 0,
           teamName, 
           coordinator 
         })
@@ -119,7 +114,6 @@ export default function MembershipDrive() {
           phone: raw.phone || phone,
           dob: raw.dob || dob,
           district: raw.district || district,
-          vmiExperience: raw.vmi_experience ?? raw.vmiExperience ?? Number(vmiExperience) ?? 0,
           teamName: raw.team_name || raw.teamName || teamName || 'N/A',
           coordinator: raw.coordinator || coordinator || 'N/A',
         });
@@ -140,17 +134,17 @@ export default function MembershipDrive() {
       const doc = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
-        format: [85, 155]
+        format: [85, 145]
       });
 
       // Card Background
       doc.setFillColor(255, 255, 255);
-      doc.roundedRect(3, 3, 79, 149, 4, 4, 'F');
+      doc.roundedRect(3, 3, 79, 139, 4, 4, 'F');
 
       // Card Border
       doc.setDrawColor(220, 38, 38);
       doc.setLineWidth(1);
-      doc.roundedRect(3, 3, 79, 149, 4, 4, 'D');
+      doc.roundedRect(3, 3, 79, 139, 4, 4, 'D');
 
       // Top Tri-Color Flag Stripe
       doc.setFillColor(220, 38, 38);
@@ -199,26 +193,25 @@ export default function MembershipDrive() {
         doc.setTextColor(17, 24, 39);
         doc.text(value, 10, currentY + 4);
 
-        currentY += 11.5;
+        currentY += 12;
       };
 
       renderField('Full Name', registeredMember.fullName);
       renderField('Mobile Number', `+91 ${registeredMember.phone}`);
       renderField('Date of Birth', registeredMember.dob);
       renderField('District', registeredMember.district);
-      renderField('VMI Experience', `${registeredMember.vmiExperience} Year(s)`);
       renderField('Team Name', registeredMember.teamName);
       renderField('Coordinator', registeredMember.coordinator);
 
       // Card Footer
       doc.setDrawColor(243, 244, 246);
-      doc.line(8, 137, 77, 137);
+      doc.line(8, 127, 77, 127);
 
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(6.5);
       doc.setTextColor(156, 163, 175);
-      doc.text('Official Membership Registry', 10, 143);
-      doc.text(new Date().toLocaleDateString('en-IN'), 75, 143, { align: 'right' });
+      doc.text('Official Membership Registry', 10, 133);
+      doc.text(new Date().toLocaleDateString('en-IN'), 75, 133, { align: 'right' });
 
       // Download PDF
       doc.save(`${registeredMember.membershipId}_Membership_Card.pdf`);
@@ -362,23 +355,6 @@ export default function MembershipDrive() {
               </div>
             </div>
 
-            {/* VMI Experience */}
-            <div>
-              <label className="block text-xs font-bold uppercase text-slate-700 mb-1">
-                VMI Exp (Years) (<span className="text-red-600">ಅನುಭವ</span>)
-              </label>
-              <input 
-                type="number" 
-                required 
-                min="0"
-                max="50"
-                value={vmiExperience} 
-                onChange={(e) => setVmiExperience(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:bg-white text-sm transition" 
-                placeholder="0, 1, 2..." 
-              />
-            </div>
-
             {/* Team Name and Coordinator */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
@@ -483,16 +459,6 @@ export default function MembershipDrive() {
                 </div>
 
                 <div className="flex items-center gap-2.5 text-xs">
-                  <Award size={15} className="text-red-600 shrink-0" />
-                  <div>
-                    <span className="text-slate-400 text-[10px] block uppercase">
-                      VMI Experience (<span className="text-red-600">ಅನುಭವ</span>)
-                    </span>
-                    <span className="text-slate-800 font-medium">{registeredMember.vmiExperience} Year(s)</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2.5 text-xs">
                   <Users size={15} className="text-red-600 shrink-0" />
                   <div>
                     <span className="text-slate-400 text-[10px] block uppercase">
@@ -529,7 +495,7 @@ export default function MembershipDrive() {
               <button 
                 type="button"
                 onClick={handleResetForm}
-                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl transition duration-200 flex items-center justify-center gap-2 text-sm"
+                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl transition duration-200 flex items-center justify-center gap-2 text-sm cursor-pointer"
               >
                 <RefreshCw size={16} />
                 Register Another Member (ಮತ್ತೊಂದು ನೋಂದಣಿ)
