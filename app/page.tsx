@@ -111,15 +111,24 @@ export default function MembershipDrive() {
       const data = await res.json();
       setLoading(false);
 
-      if (res.ok && data.success) {
-        setRegisteredMember(data.member);
+      if (res.ok && (data.success || data.data || data.member)) {
+        const raw = data.member || data.data || {};
+        setRegisteredMember({
+          membershipId: raw.membership_id || raw.membershipId || 'TVK-KA-REG',
+          fullName: raw.full_name || raw.fullName || fullName,
+          phone: raw.phone || phone,
+          dob: raw.dob || dob,
+          district: raw.district || district,
+          vmiExperience: raw.vmi_experience ?? raw.vmiExperience ?? Number(vmiExperience) ?? 0,
+          teamName: raw.team_name || raw.teamName || teamName || 'N/A',
+          coordinator: raw.coordinator || coordinator || 'N/A',
+        });
       } else {
-        setErrorMessage(data.error || `Server error (${res.status})`);
+        setErrorMessage(data.error || 'Failed to submit registration. Please try again.');
       }
-    } catch (err) {
+    } catch {
       setLoading(false);
-      console.error('Fetch error:', err);
-      setErrorMessage('Network connection error. Check server logs.');
+      setErrorMessage('Network connection error. Please try again.');
     }
   };
 
@@ -134,9 +143,11 @@ export default function MembershipDrive() {
         format: [85, 155]
       });
 
-      // Background & Border
+      // Card Background
       doc.setFillColor(255, 255, 255);
       doc.roundedRect(3, 3, 79, 149, 4, 4, 'F');
+
+      // Card Border
       doc.setDrawColor(220, 38, 38);
       doc.setLineWidth(1);
       doc.roundedRect(3, 3, 79, 149, 4, 4, 'D');
@@ -149,7 +160,7 @@ export default function MembershipDrive() {
       doc.setFillColor(220, 38, 38);
       doc.rect(55, 4, 26, 4, 'F');
 
-      // Header
+      // Card Header
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8);
       doc.setTextColor(220, 38, 38);
@@ -199,7 +210,7 @@ export default function MembershipDrive() {
       renderField('Team Name', registeredMember.teamName);
       renderField('Coordinator', registeredMember.coordinator);
 
-      // Footer
+      // Card Footer
       doc.setDrawColor(243, 244, 246);
       doc.line(8, 137, 77, 137);
 
@@ -209,6 +220,7 @@ export default function MembershipDrive() {
       doc.text('Official Membership Registry', 10, 143);
       doc.text(new Date().toLocaleDateString('en-IN'), 75, 143, { align: 'right' });
 
+      // Download PDF
       doc.save(`${registeredMember.membershipId}_Membership_Card.pdf`);
     } catch (err) {
       console.error('PDF Generation Error:', err);
@@ -401,13 +413,13 @@ export default function MembershipDrive() {
             <button 
               type="submit" 
               disabled={loading} 
-              className="w-full bg-[#FF0000] hover:bg-[#d90000] text-white font-black py-3.5 rounded-xl transition duration-200 mt-2 shadow-md hover:shadow-lg tracking-wide uppercase"
+              className="w-full bg-[#FF0000] hover:bg-[#d90000] text-white font-black py-3.5 rounded-xl transition duration-200 mt-2 shadow-md hover:shadow-lg tracking-wide uppercase disabled:bg-slate-400 cursor-pointer"
             >
               {loading ? 'Submitting Registration...' : 'Register Member (ನೋಂದಾಯಿಸಿ)'}
             </button>
           </form>
         ) : (
-          /* SUCCESS VIEW & ID CARD */
+          /* SUCCESS VIEW */
           <div className="space-y-4">
             <div className="text-center">
               <div className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 text-xs px-3 py-1 rounded-full font-bold border border-emerald-200 mb-2">
@@ -502,28 +514,30 @@ export default function MembershipDrive() {
               </div>
             </div>
 
-            {/* Actions: Download PDF & Register Another */}
-            <div className="space-y-2 pt-2">
-              <button
+            {/* Action Buttons */}
+            <div className="flex flex-col gap-2.5 pt-2">
+              <button 
                 type="button"
                 onClick={handleDownloadPDF}
                 disabled={downloading}
-                className="w-full bg-[#FF0000] hover:bg-[#d90000] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 shadow-md transition disabled:opacity-50 text-sm"
+                className="w-full bg-[#FF0000] hover:bg-[#d90000] text-white font-black py-3.5 px-4 rounded-xl transition duration-200 shadow-md flex items-center justify-center gap-2 text-sm uppercase tracking-wide disabled:bg-slate-400 cursor-pointer"
               >
-                <Download size={16} />
+                <Download size={18} />
                 {downloading ? 'Generating PDF...' : 'Download Member ID Card (PDF)'}
               </button>
 
-              <button
+              <button 
                 type="button"
                 onClick={handleResetForm}
-                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition text-xs border border-slate-300"
+                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl transition duration-200 flex items-center justify-center gap-2 text-sm"
               >
-                <RefreshCw size={14} /> Register Another Member (ಮತ್ತೊಂದು ನೋಂದಣಿ)
+                <RefreshCw size={16} />
+                Register Another Member (ಮತ್ತೊಂದು ನೋಂದಣಿ)
               </button>
             </div>
           </div>
         )}
+
       </div>
     </main>
   );
