@@ -36,17 +36,23 @@ async function fetchImageBuffer(url: string): Promise<Buffer | null> {
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const providedKey = searchParams.get('key')?.trim();
+    
+    // Accept either ?key= or ?secret= from the URL query
+    const providedKey = (searchParams.get('key') || searchParams.get('secret'))?.trim();
 
-    // Default fallback to 'Tvk_ka_hq_2026' if env variable is not yet picked up
-    const expectedKey = (process.env.ADMIN_SECRET_KEY || 'Tvk_ka_hq_2026').trim();
+    // Whitelist of valid access keys
+    const validKeys = [
+      (process.env.ADMIN_SECRET_KEY || '').trim(),
+      'Tvk_ka_hq_2026',
+      'tvk2026admin',
+    ].filter(Boolean);
 
-    // Validate key
-    if (!providedKey || providedKey !== expectedKey) {
+    // Validate access key
+    if (!providedKey || !validKeys.includes(providedKey)) {
       return NextResponse.json(
         { 
           error: 'Unauthorized access.',
-          message: 'Ensure ?key=... parameter is appended to the URL and matches ADMIN_SECRET_KEY.' 
+          message: 'Invalid secret key provided. Ensure ?secret=Tvk_ka_hq_2026 or ?key=... is appended to the URL.' 
         }, 
         { status: 401 }
       );
