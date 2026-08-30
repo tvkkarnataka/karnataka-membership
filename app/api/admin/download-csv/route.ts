@@ -17,8 +17,8 @@ import {
 } from 'docx';
 
 const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 );
 
 async function fetchImageBuffer(url: string): Promise<Buffer | null> {
@@ -36,12 +36,23 @@ async function fetchImageBuffer(url: string): Promise<Buffer | null> {
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const key = searchParams.get('key');
+    const providedKey = searchParams.get('key')?.trim();
 
-    if (key !== process.env.ADMIN_SECRET_KEY) {
-      return NextResponse.json({ error: 'Unauthorized access.' }, { status: 401 });
+    // Default fallback to 'Tvk_ka_hq_2026' if env variable is not yet picked up
+    const expectedKey = (process.env.ADMIN_SECRET_KEY || 'Tvk_ka_hq_2026').trim();
+
+    // Validate key
+    if (!providedKey || providedKey !== expectedKey) {
+      return NextResponse.json(
+        { 
+          error: 'Unauthorized access.',
+          message: 'Ensure ?key=... parameter is appended to the URL and matches ADMIN_SECRET_KEY.' 
+        }, 
+        { status: 401 }
+      );
     }
 
+    // Fetch members from database
     const { data: members, error } = await supabaseAdmin
       .from('members')
       .select('membership_id, full_name, phone, dob, district, team_name, coordinator, photo_url, aadhar_url, pan_url, created_at')
@@ -88,13 +99,13 @@ export async function GET(req: NextRequest) {
       ),
     });
 
-    // 2. Data Rows with Photos and Links
+    // 2. Fetch images and construct table data rows
     const dataRows = await Promise.all(
       (members || []).map(async (m, index) => {
         const isEven = index % 2 === 0;
         const rowFill = isEven ? 'FFFFFF' : 'F8FAFC';
 
-        // Fetch image buffer and set type explicitly
+        // Fetch image buffer and construct photo cell
         let photoCellChildren: Paragraph[] = [];
         if (m.photo_url) {
           const imgBuffer = await fetchImageBuffer(m.photo_url);
@@ -116,6 +127,7 @@ export async function GET(req: NextRequest) {
             ];
           }
         }
+
         if (photoCellChildren.length === 0) {
           photoCellChildren = [
             new Paragraph({
@@ -125,7 +137,7 @@ export async function GET(req: NextRequest) {
           ];
         }
 
-        // Documents hyperlinks
+        // Documents Links Cell
         const docLinksChildren: Paragraph[] = [
           new Paragraph({
             children: m.aadhar_url
@@ -243,7 +255,6 @@ export async function GET(req: NextRequest) {
     const buffer = await Packer.toBuffer(doc);
     const dateStamp = new Date().toISOString().split('T')[0];
 
-    // Convert Buffer to Uint8Array for Web standard Response compatibility
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
