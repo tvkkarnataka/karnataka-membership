@@ -4,16 +4,8 @@ import React, { useState } from 'react';
 import { 
   CheckCircle2, 
   RefreshCw, 
-  UserCheck, 
-  Phone, 
-  MapPin, 
-  Calendar, 
-  AlertCircle, 
-  Download, 
-  Users, 
-  UserCog 
+  AlertCircle 
 } from 'lucide-react';
-import jsPDF from 'jspdf';
 
 const KARNATAKA_DISTRICTS = [
   'Bagalkote', 'Ballari', 'Belagavi', 'Bengaluru Rural', 'Bengaluru Urban',
@@ -30,20 +22,10 @@ const getMaxAllowedDob = () => {
   return today.toISOString().split('T')[0];
 };
 
-interface MemberData {
-  membershipId: string;
-  fullName: string;
-  phone: string;
-  dob: string;
-  district: string;
-  teamName: string;
-  coordinator: string;
-}
-
 export default function MembershipDrive() {
   const [loading, setLoading] = useState(false);
-  const [downloading, setDownloading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [isRegistered, setIsRegistered] = useState(false);
 
   // Form States
   const [fullName, setFullName] = useState('');
@@ -52,7 +34,6 @@ export default function MembershipDrive() {
   const [district, setDistrict] = useState('');
   const [teamName, setTeamName] = useState('');
   const [coordinator, setCoordinator] = useState('');
-  const [registeredMember, setRegisteredMember] = useState<MemberData | null>(null);
 
   const isEligibleAge = (birthDateString: string): boolean => {
     if (!birthDateString) return false;
@@ -69,7 +50,7 @@ export default function MembershipDrive() {
     setDistrict('');
     setTeamName('');
     setCoordinator('');
-    setRegisteredMember(null);
+    setIsRegistered(false);
     setErrorMessage('');
   };
 
@@ -107,118 +88,13 @@ export default function MembershipDrive() {
       setLoading(false);
 
       if (res.ok && (data.success || data.data || data.member)) {
-        const raw = data.member || data.data || {};
-        setRegisteredMember({
-          membershipId: raw.membership_id || raw.membershipId || 'TVK-KA-REG',
-          fullName: raw.full_name || raw.fullName || fullName,
-          phone: raw.phone || phone,
-          dob: raw.dob || dob,
-          district: raw.district || district,
-          teamName: raw.team_name || raw.teamName || teamName || 'N/A',
-          coordinator: raw.coordinator || coordinator || 'N/A',
-        });
+        setIsRegistered(true);
       } else {
         setErrorMessage(data.error || 'Failed to submit registration. Please try again.');
       }
     } catch {
       setLoading(false);
       setErrorMessage('Network connection error. Please try again.');
-    }
-  };
-
-  const handleDownloadPDF = () => {
-    if (!registeredMember) return;
-    setDownloading(true);
-
-    try {
-      const doc = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: [85, 145]
-      });
-
-      // Card Background
-      doc.setFillColor(255, 255, 255);
-      doc.roundedRect(3, 3, 79, 139, 4, 4, 'F');
-
-      // Card Border
-      doc.setDrawColor(220, 38, 38);
-      doc.setLineWidth(1);
-      doc.roundedRect(3, 3, 79, 139, 4, 4, 'D');
-
-      // Top Tri-Color Flag Stripe
-      doc.setFillColor(220, 38, 38);
-      doc.rect(4, 4, 25.5, 4, 'F');
-      doc.setFillColor(250, 204, 21);
-      doc.rect(29.5, 4, 25.5, 4, 'F');
-      doc.setFillColor(220, 38, 38);
-      doc.rect(55, 4, 26, 4, 'F');
-
-      // Card Header
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
-      doc.setTextColor(220, 38, 38);
-      doc.text('TVK KARNATAKA REGISTRATION DRIVE', 42.5, 14, { align: 'center' });
-
-      doc.setFontSize(11);
-      doc.setTextColor(17, 24, 39);
-      doc.text('MEMBER ID CARD', 42.5, 20, { align: 'center' });
-
-      // ID Badge
-      doc.setFillColor(254, 242, 242);
-      doc.setDrawColor(254, 202, 202);
-      doc.roundedRect(12, 23, 61, 9, 2, 2, 'FD');
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10.5);
-      doc.setTextColor(220, 38, 38);
-      doc.text(registeredMember.membershipId, 42.5, 29, { align: 'center' });
-
-      // Divider Line
-      doc.setDrawColor(229, 231, 235);
-      doc.setLineWidth(0.4);
-      doc.line(8, 35, 77, 35);
-
-      // Card Fields
-      let currentY = 41;
-
-      const renderField = (label: string, value: string) => {
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(6.5);
-        doc.setTextColor(107, 114, 128);
-        doc.text(label.toUpperCase(), 10, currentY);
-
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8.5);
-        doc.setTextColor(17, 24, 39);
-        doc.text(value, 10, currentY + 4);
-
-        currentY += 12;
-      };
-
-      renderField('Full Name', registeredMember.fullName);
-      renderField('Mobile Number', `+91 ${registeredMember.phone}`);
-      renderField('Date of Birth', registeredMember.dob);
-      renderField('District', registeredMember.district);
-      renderField('Team Name', registeredMember.teamName);
-      renderField('Coordinator', registeredMember.coordinator);
-
-      // Card Footer
-      doc.setDrawColor(243, 244, 246);
-      doc.line(8, 127, 77, 127);
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(6.5);
-      doc.setTextColor(156, 163, 175);
-      doc.text('Official Membership Registry', 10, 133);
-      doc.text(new Date().toLocaleDateString('en-IN'), 75, 133, { align: 'right' });
-
-      // Download PDF
-      doc.save(`${registeredMember.membershipId}_Membership_Card.pdf`);
-    } catch (err) {
-      console.error('PDF Generation Error:', err);
-    } finally {
-      setDownloading(false);
     }
   };
 
@@ -291,7 +167,7 @@ export default function MembershipDrive() {
         )}
 
         {/* FORM SECTION */}
-        {!registeredMember ? (
+        {!isRegistered ? (
           <form onSubmit={handleSubmitRegistration} className="space-y-4">
             <div>
               <label className="block text-xs font-bold uppercase text-slate-700 mb-1">
@@ -395,107 +271,29 @@ export default function MembershipDrive() {
             </button>
           </form>
         ) : (
-          /* SUCCESS VIEW */
-          <div className="space-y-4">
-            <div className="text-center">
-              <div className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 text-xs px-3 py-1 rounded-full font-bold border border-emerald-200 mb-2">
-                <CheckCircle2 size={16} className="text-emerald-600" /> Registered Successfully
-              </div>
-              <h2 className="text-lg font-extrabold text-slate-900">Membership Card Ready</h2>
-              <p className="text-xs text-slate-500">Download your official membership card below.</p>
+          /* SUCCESS VIEW (NO DETAILS TAB, MESSAGE ONLY) */
+          <div className="py-8 text-center space-y-6">
+            <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto border-2 border-emerald-200 shadow-sm">
+              <CheckCircle2 size={42} className="text-emerald-600" />
             </div>
 
-            {/* Visual Card on Screen */}
-            <div className="bg-white border-2 border-red-500 rounded-2xl p-5 shadow-sm space-y-2.5 relative overflow-hidden">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                <div>
-                  <span className="text-[10px] font-bold text-red-600 tracking-wider uppercase block">Karnataka Drive</span>
-                  <span className="text-xs font-extrabold text-slate-900">MEMBER ID CARD</span>
-                </div>
-                <span className="text-sm font-mono font-black text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-200">
-                  {registeredMember.membershipId}
-                </span>
-              </div>
-
-              <div className="space-y-2 pt-1">
-                <div className="flex items-center gap-2.5 text-xs">
-                  <UserCheck size={15} className="text-red-600 shrink-0" />
-                  <div>
-                    <span className="text-slate-400 text-[10px] block uppercase">
-                      Full Name (<span className="text-red-600">ಹೆಸರು</span>)
-                    </span>
-                    <strong className="text-slate-900 font-bold">{registeredMember.fullName}</strong>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2.5 text-xs">
-                  <Phone size={15} className="text-red-600 shrink-0" />
-                  <div>
-                    <span className="text-slate-400 text-[10px] block uppercase">
-                      Mobile Number (<span className="text-red-600">ಮೊಬೈಲ್ ಸಂಖ್ಯೆ</span>)
-                    </span>
-                    <span className="text-slate-800 font-medium">+91 {registeredMember.phone}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2.5 text-xs">
-                  <Calendar size={15} className="text-red-600 shrink-0" />
-                  <div>
-                    <span className="text-slate-400 text-[10px] block uppercase">
-                      Date of Birth (<span className="text-red-600">ದಿನಾಂಕ</span>)
-                    </span>
-                    <span className="text-slate-800 font-medium">{registeredMember.dob}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2.5 text-xs">
-                  <MapPin size={15} className="text-red-600 shrink-0" />
-                  <div>
-                    <span className="text-slate-400 text-[10px] block uppercase">
-                      District (<span className="text-red-600">ಜಿಲ್ಲೆ</span>)
-                    </span>
-                    <span className="text-slate-800 font-medium">{registeredMember.district}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2.5 text-xs">
-                  <Users size={15} className="text-red-600 shrink-0" />
-                  <div>
-                    <span className="text-slate-400 text-[10px] block uppercase">
-                      Team Name (<span className="text-red-600">ತಂಡದ ಹೆಸರು</span>)
-                    </span>
-                    <span className="text-slate-800 font-medium">{registeredMember.teamName}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2.5 text-xs">
-                  <UserCog size={15} className="text-red-600 shrink-0" />
-                  <div>
-                    <span className="text-slate-400 text-[10px] block uppercase">
-                      Coordinator (<span className="text-red-600">ಸಂಯೋಜಕರು</span>)
-                    </span>
-                    <span className="text-slate-800 font-medium">{registeredMember.coordinator}</span>
-                  </div>
-                </div>
-              </div>
+            <div className="space-y-2">
+              <h2 className="text-2xl font-black text-slate-900">
+                Registration Successful!
+              </h2>
+              <p className="text-sm font-semibold text-emerald-700">
+                ನೋಂದಣಿ ಯಶಸ್ವಿಯಾಗಿದೆ!
+              </p>
+              <p className="text-xs text-slate-500 max-w-xs mx-auto pt-1">
+                Your details have been successfully recorded in the TVK Karnataka membership registry.
+              </p>
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex flex-col gap-2.5 pt-2">
-              <button 
-                type="button"
-                onClick={handleDownloadPDF}
-                disabled={downloading}
-                className="w-full bg-[#FF0000] hover:bg-[#d90000] text-white font-black py-3.5 px-4 rounded-xl transition duration-200 shadow-md flex items-center justify-center gap-2 text-sm uppercase tracking-wide disabled:bg-slate-400 cursor-pointer"
-              >
-                <Download size={18} />
-                {downloading ? 'Generating PDF...' : 'Download Member ID Card (PDF)'}
-              </button>
-
+            <div className="pt-4">
               <button 
                 type="button"
                 onClick={handleResetForm}
-                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl transition duration-200 flex items-center justify-center gap-2 text-sm cursor-pointer"
+                className="w-full bg-[#FF0000] hover:bg-[#d90000] text-white font-bold py-3.5 px-4 rounded-xl transition duration-200 shadow-md flex items-center justify-center gap-2 text-sm uppercase tracking-wide cursor-pointer"
               >
                 <RefreshCw size={16} />
                 Register Another Member (ಮತ್ತೊಂದು ನೋಂದಣಿ)
