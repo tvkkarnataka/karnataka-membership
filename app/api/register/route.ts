@@ -1,43 +1,62 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseKey =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  '';
-
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { fullName, phone, dob, district, teamName, coordinator } = body;
+    const { fullName, phone, dob, district, teamName, coordinator, photoUrl, aadharUrl, panUrl } = body;
 
-    // 1. Basic Validation
-    if (!fullName || !phone || !dob || !district) {
+    if (!fullName || !phone || !dob || !district || !photoUrl || !aadharUrl || !panUrl) {
       return NextResponse.json(
-        { error: 'Please fill in all mandatory fields.' },
+        { success: false, error: 'Please fill in all fields and ensure documents are uploaded.' },
         { status: 400 }
       );
     }
 
-    // 2. Generate Random Membership ID
+    const sanitizedPhone = String(phone).trim().replace(/\D/g, '');
+    if (sanitizedPhone.length !== 10) {
+      return NextResponse.json(
+        { success: false, error: 'Please enter a valid 10-digit mobile number.' },
+        { status: 400 }
+      );
+    }
+
+    // Duplicate check
+    const { data: existingMember } = await supabaseAdmin
+      .from('members')
+      .select('id')
+      .eq('phone', sanitizedPhone)
+      .maybeSingle();
+
+    if (existingMember) {
+      return NextResponse.json(
+        { success: false, error: 'Mobile number already registered.' },
+        { status: 409 }
+      );
+    }
+
     const randomSuffix = Math.floor(10000 + Math.random() * 90000);
     const membershipId = `TVK-KA-${randomSuffix}`;
 
-    // 3. Insert into Supabase
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('members')
       .insert([
         {
           membership_id: membershipId,
           full_name: fullName.trim(),
-          phone: phone.trim(),
+          phone: sanitizedPhone,
           dob: dob,
           district: district.trim(),
-          team_name: teamName ? teamName.trim() : 'N/A',
-          coordinator: coordinator ? coordinator.trim() : 'N/A',
+          team_name: teamName ? teamName.trim() : null,
+          coordinator: coordinator ? coordinator.trim() : null,
+          photo_url: photoUrl,
+          aadhar_url: aadharUrl,
+          pan_url: panUrl,
         },
       ])
       .select()
@@ -46,30 +65,22 @@ export async function POST(req: NextRequest) {
     if (error) {
       if (error.code === '23505') {
         return NextResponse.json(
-          { error: 'Mobile number already registered.' },
+          { success: false, error: 'Mobile number already registered.' },
           { status: 409 }
         );
       }
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
     return NextResponse.json(
       {
         success: true,
-        data: data || {
-          membership_id: membershipId,
-          full_name: fullName.trim(),
-          phone: phone.trim(),
-          dob: dob,
-          district: district.trim(),
-          team_name: teamName || 'N/A',
-          coordinator: coordinator || 'N/A',
-        },
+        data,
       },
       { status: 201 }
     );
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Server error occurred.';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
