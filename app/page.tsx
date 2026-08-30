@@ -1,12 +1,18 @@
 'use client';
 
 import React, { useState } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { 
   CheckCircle2, 
   RefreshCw, 
   AlertCircle, 
   Upload 
 } from 'lucide-react';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const KARNATAKA_DISTRICTS = [
   'Bagalkote', 'Ballari', 'Belagavi', 'Bengaluru Rural', 'Bengaluru Urban',
@@ -28,7 +34,7 @@ export default function MembershipDrive() {
   const [errorMessage, setErrorMessage] = useState('');
   const [isRegistered, setIsRegistered] = useState(false);
 
-  // Form Fields
+  // Form States
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [dob, setDob] = useState('');
@@ -36,7 +42,7 @@ export default function MembershipDrive() {
   const [teamName, setTeamName] = useState('');
   const [coordinator, setCoordinator] = useState('');
 
-  // File Upload States
+  // File States
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [aadharFile, setAadharFile] = useState<File | null>(null);
   const [panFile, setPanFile] = useState<File | null>(null);
@@ -63,17 +69,43 @@ export default function MembershipDrive() {
     setErrorMessage('');
   };
 
+  const uploadFileDirect = async (file: File, folder: string, phoneNum: string): Promise<string> => {
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error('Supabase client credentials are missing. Please check your environment variables.');
+    }
+
+    const fileExt = file.name.split('.').pop() || 'jpg';
+    const cleanFileName = `${folder}/${phoneNum}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('member-documents')
+      .upload(cleanFileName, file, {
+        cacheControl: '3600',
+        upsert: true,
+      });
+
+    if (uploadError) {
+      throw new Error(`Upload error (${folder}): ${uploadError.message}`);
+    }
+
+    const { data } = supabase.storage
+      .from('member-documents')
+      .getPublicUrl(cleanFileName);
+
+    return data.publicUrl;
+  };
+
   const handleSubmitRegistration = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
-    // 1. Basic Validation
     if (!isEligibleAge(dob)) {
       setErrorMessage('Applicant must be 18 years or older to register.');
       return;
     }
 
-    if (phone.trim().length !== 10) {
+    const sanitizedPhone = phone.trim().replace(/\D/g, '');
+    if (sanitizedPhone.length !== 10) {
       setErrorMessage('Please enter a valid 10-digit mobile number.');
       return;
     }
@@ -83,39 +115,39 @@ export default function MembershipDrive() {
       return;
     }
 
-    // 2. Client-side File Size Validation (Max 5MB per file)
-    const MAX_FILE_SIZE = 5 * 1024 * 1024;
-    if (photoFile.size > MAX_FILE_SIZE || aadharFile.size > MAX_FILE_SIZE || panFile.size > MAX_FILE_SIZE) {
-      setErrorMessage('Each file must be less than 5MB. Please upload a smaller image.');
-      return;
-    }
-
     setLoading(true);
 
     try {
-      const formData = new FormData();
-      formData.append('fullName', fullName);
-      formData.append('phone', phone);
-      formData.append('dob', dob);
-      formData.append('district', district);
-      formData.append('teamName', teamName);
-      formData.append('coordinator', coordinator);
+      // 1. Upload files directly from the browser to Supabase Storage
+      const [photoUrl, aadharUrl, panUrl] = await Promise.all([
+        uploadFileDirect(photoFile, 'photos', sanitizedPhone),
+        uploadFileDirect(aadharFile, 'aadhar', sanitizedPhone),
+        uploadFileDirect(panFile, 'pan', sanitizedPhone),
+      ]);
 
-      formData.append('photo', photoFile);
-      formData.append('aadhar', aadharFile);
-      formData.append('pan', panFile);
-
+      // 2. Submit record metadata to backend API
       const res = await fetch('/api/register', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName,
+          phone: sanitizedPhone,
+          dob,
+          district,
+          teamName,
+          coordinator,
+          photoUrl,
+          aadharUrl,
+          panUrl,
+        }),
       });
 
-      // 3. Safe JSON response handling to prevent parser crashes
-      let data;
+      const responseText = await res.text();
+      let data: any = {};
       try {
-        data = await res.json();
+        data = JSON.parse(responseText);
       } catch {
-        throw new Error('Server returned an invalid response. Please try with smaller image files.');
+        throw new Error(responseText || `Server returned error status: ${res.status}`);
       }
 
       setLoading(false);
@@ -127,7 +159,7 @@ export default function MembershipDrive() {
       }
     } catch (err: unknown) {
       setLoading(false);
-      const msg = err instanceof Error ? err.message : 'Network connection error. Please try again.';
+      const msg = err instanceof Error ? err.message : 'Registration failed. Please check your connection and try again.';
       setErrorMessage(msg);
     }
   };
@@ -136,14 +168,14 @@ export default function MembershipDrive() {
     <main className="min-h-screen bg-slate-50 text-slate-900 flex items-center justify-center p-4">
       <div className="max-w-lg w-full bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-xl relative overflow-hidden my-6">
         
-        {/* Top Flag Stripe */}
+        {/* Flag Stripe Header */}
         <div className="absolute top-0 left-0 right-0 h-3 flex">
           <div className="w-1/3 bg-[#FF0000]"></div>
           <div className="w-1/3 bg-[#FFFF00]"></div>
           <div className="w-1/3 bg-[#FF0000]"></div>
         </div>
 
-        {/* Top Logo */}
+        {/* Logo */}
         <div className="flex justify-center mt-3 mb-2">
           <img 
             src="/logo.jpeg" 
@@ -155,7 +187,7 @@ export default function MembershipDrive() {
           />
         </div>
 
-        {/* Banner Title */}
+        {/* Title */}
         <div className="text-center mb-6">
           <span className="inline-block bg-red-50 text-red-600 text-xs px-3.5 py-1 rounded-full uppercase tracking-wider font-extrabold border border-red-200 mb-2">
             REGISTRATION
@@ -193,7 +225,7 @@ export default function MembershipDrive() {
           </p>
         </div>
 
-        {/* Error Banner */}
+        {/* Error Notification */}
         {errorMessage && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center gap-2">
             <AlertCircle size={16} className="shrink-0" />
@@ -201,7 +233,7 @@ export default function MembershipDrive() {
           </div>
         )}
 
-        {/* Form View */}
+        {/* Form */}
         {!isRegistered ? (
           <form onSubmit={handleSubmitRegistration} className="space-y-4">
             <div>
@@ -225,7 +257,7 @@ export default function MembershipDrive() {
               <input 
                 type="tel" 
                 required 
-                pattern="[0-9]{10}" 
+                maxLength={10}
                 value={phone} 
                 onChange={(e) => setPhone(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:bg-white text-sm transition" 
@@ -310,7 +342,7 @@ export default function MembershipDrive() {
                 <input 
                   type="file" 
                   required 
-                  accept="image/jpeg,image/png,image/webp"
+                  accept="image/*"
                   onChange={(e) => setPhotoFile(e.target.files?.[0] || null)}
                   className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-red-50 file:text-red-700 hover:file:bg-red-100 bg-slate-50 rounded-xl border border-slate-200 p-1 cursor-pointer"
                 />
@@ -323,7 +355,7 @@ export default function MembershipDrive() {
                 <input 
                   type="file" 
                   required 
-                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                  accept="image/*,application/pdf"
                   onChange={(e) => setAadharFile(e.target.files?.[0] || null)}
                   className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-red-50 file:text-red-700 hover:file:bg-red-100 bg-slate-50 rounded-xl border border-slate-200 p-1 cursor-pointer"
                 />
@@ -336,7 +368,7 @@ export default function MembershipDrive() {
                 <input 
                   type="file" 
                   required 
-                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                  accept="image/*,application/pdf"
                   onChange={(e) => setPanFile(e.target.files?.[0] || null)}
                   className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-red-50 file:text-red-700 hover:file:bg-red-100 bg-slate-50 rounded-xl border border-slate-200 p-1 cursor-pointer"
                 />
@@ -352,7 +384,7 @@ export default function MembershipDrive() {
             </button>
           </form>
         ) : (
-          /* Success Screen */
+          /* Confirmation Screen */
           <div className="py-8 text-center space-y-6">
             <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto border-2 border-emerald-200 shadow-sm">
               <CheckCircle2 size={42} className="text-emerald-600" />
