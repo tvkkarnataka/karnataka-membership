@@ -4,7 +4,8 @@ import React, { useState } from 'react';
 import { 
   CheckCircle2, 
   RefreshCw, 
-  AlertCircle 
+  AlertCircle, 
+  Upload 
 } from 'lucide-react';
 
 const KARNATAKA_DISTRICTS = [
@@ -35,6 +36,11 @@ export default function MembershipDrive() {
   const [teamName, setTeamName] = useState('');
   const [coordinator, setCoordinator] = useState('');
 
+  // File States
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [aadharFile, setAadharFile] = useState<File | null>(null);
+  const [panFile, setPanFile] = useState<File | null>(null);
+
   const isEligibleAge = (birthDateString: string): boolean => {
     if (!birthDateString) return false;
     const birthDate = new Date(birthDateString);
@@ -50,6 +56,9 @@ export default function MembershipDrive() {
     setDistrict('');
     setTeamName('');
     setCoordinator('');
+    setPhotoFile(null);
+    setAadharFile(null);
+    setPanFile(null);
     setIsRegistered(false);
     setErrorMessage('');
   };
@@ -68,26 +77,35 @@ export default function MembershipDrive() {
       return;
     }
 
+    if (!photoFile || !aadharFile || !panFile) {
+      setErrorMessage('Please upload all 3 required documents (Photo, Aadhaar, and PAN).');
+      return;
+    }
+
     setLoading(true);
 
     try {
+      const formData = new FormData();
+      formData.append('fullName', fullName);
+      formData.append('phone', phone);
+      formData.append('dob', dob);
+      formData.append('district', district);
+      formData.append('teamName', teamName);
+      formData.append('coordinator', coordinator);
+
+      formData.append('photo', photoFile);
+      formData.append('aadhar', aadharFile);
+      formData.append('pan', panFile);
+
       const res = await fetch('/api/register', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          fullName, 
-          phone, 
-          dob, 
-          district,   
-          teamName, 
-          coordinator 
-        })
+        body: formData,
       });
 
       const data = await res.json();
       setLoading(false);
 
-      if (res.ok && (data.success || data.data || data.member)) {
+      if (res.ok && data.success) {
         setIsRegistered(true);
       } else {
         setErrorMessage(data.error || 'Failed to submit registration. Please try again.');
@@ -100,7 +118,7 @@ export default function MembershipDrive() {
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-xl relative overflow-hidden">
+      <div className="max-w-lg w-full bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-xl relative overflow-hidden my-6">
         
         {/* Top Flag Stripe */}
         <div className="absolute top-0 left-0 right-0 h-3 flex">
@@ -231,7 +249,6 @@ export default function MembershipDrive() {
               </div>
             </div>
 
-            {/* Team Name and Coordinator */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-700 mb-1">
@@ -262,16 +279,63 @@ export default function MembershipDrive() {
               </div>
             </div>
 
+            {/* Document Uploads Inputs */}
+            <div className="border-t border-slate-200 pt-4 space-y-3">
+              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <Upload size={14} className="text-red-600" />
+                Upload Documents (<span className="text-red-600">ದಾಖಲೆಗಳು</span>)
+              </h3>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  1. Passport Size Photo (ಭಾವಚಿತ್ರ) <span className="text-red-500">*</span>
+                </label>
+                <input 
+                  type="file" 
+                  required 
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(e) => setPhotoFile(e.target.files?.[0] || null)}
+                  className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-red-50 file:text-red-700 hover:file:bg-red-100 bg-slate-50 rounded-xl border border-slate-200 p-1 cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  2. Aadhaar Card File / Photo (ಆಧಾರ್) <span className="text-red-500">*</span>
+                </label>
+                <input 
+                  type="file" 
+                  required 
+                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                  onChange={(e) => setAadharFile(e.target.files?.[0] || null)}
+                  className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-red-50 file:text-red-700 hover:file:bg-red-100 bg-slate-50 rounded-xl border border-slate-200 p-1 cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  3. PAN Card File / Photo (ಪ್ಯಾನ್ ಕಾರ್ಡ್) <span className="text-red-500">*</span>
+                </label>
+                <input 
+                  type="file" 
+                  required 
+                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                  onChange={(e) => setPanFile(e.target.files?.[0] || null)}
+                  className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-red-50 file:text-red-700 hover:file:bg-red-100 bg-slate-50 rounded-xl border border-slate-200 p-1 cursor-pointer"
+                />
+              </div>
+            </div>
+
             <button 
               type="submit" 
               disabled={loading} 
               className="w-full bg-[#FF0000] hover:bg-[#d90000] text-white font-black py-3.5 rounded-xl transition duration-200 mt-2 shadow-md hover:shadow-lg tracking-wide uppercase disabled:bg-slate-400 cursor-pointer"
             >
-              {loading ? 'Submitting Registration...' : 'Register Member (ನೋಂದಾಯಿಸಿ)'}
+              {loading ? 'Uploading & Registering...' : 'Register Member (ನೋಂದಾಯಿಸಿ)'}
             </button>
           </form>
         ) : (
-          /* SUCCESS VIEW (NO DETAILS TAB, MESSAGE ONLY) */
+          /* SUCCESS VIEW */
           <div className="py-8 text-center space-y-6">
             <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto border-2 border-emerald-200 shadow-sm">
               <CheckCircle2 size={42} className="text-emerald-600" />
@@ -285,7 +349,7 @@ export default function MembershipDrive() {
                 ನೋಂದಣಿ ಯಶಸ್ವಿಯಾಗಿದೆ!
               </p>
               <p className="text-xs text-slate-500 max-w-xs mx-auto pt-1">
-                Your details have been successfully recorded in the TVK Karnataka membership registry.
+                Your details and verification documents have been securely uploaded to the TVK Karnataka registry.
               </p>
             </div>
 

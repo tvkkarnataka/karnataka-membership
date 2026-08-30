@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { 
-  Document, 
-  Packer, 
-  Paragraph, 
-  Table, 
-  TableCell, 
-  TableRow, 
-  WidthType, 
-  AlignmentType, 
-  HeadingLevel, 
-  TextRun, 
-  ShadingType 
+import {
+  Document,
+  Packer,
+  Paragraph,
+  Table,
+  TableCell,
+  TableRow,
+  WidthType,
+  AlignmentType,
+  HeadingLevel,
+  TextRun,
+  ShadingType,
+  ImageRun,
+  ExternalHyperlink,
 } from 'docx';
 
 const supabaseAdmin = createClient(
@@ -19,159 +21,239 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const ADMIN_SECRET = process.env.ADMIN_SECRET_KEY || 'TVK_SECRET_PASS_2026';
+async function fetchImageBuffer(url: string): Promise<Buffer | null> {
+  if (!url) return null;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const arrayBuffer = await res.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  } catch {
+    return null;
+  }
+}
 
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const secret = searchParams.get('secret');
-
-  // 1. Verify Secret Passcode
-  if (!secret || secret !== ADMIN_SECRET) {
-    return new NextResponse('Unauthorized: Invalid or missing secret key.', { status: 401 });
-  }
-
   try {
-    // 2. Fetch all members from Supabase
+    const { searchParams } = new URL(req.url);
+    const key = searchParams.get('key');
+
+    if (key !== process.env.ADMIN_SECRET_KEY) {
+      return NextResponse.json({ error: 'Unauthorized access.' }, { status: 401 });
+    }
+
     const { data: members, error } = await supabaseAdmin
       .from('members')
-      .select('*')
+      .select('membership_id, full_name, phone, dob, district, team_name, coordinator, photo_url, aadhar_url, pan_url, created_at')
       .order('created_at', { ascending: false });
 
     if (error) {
-      return new NextResponse(`Database error: ${error.message}`, { status: 500 });
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    if (!members || members.length === 0) {
-      return new NextResponse('No registered members found.', { status: 404 });
-    }
+    // 1. Table Headers
+    const headerColumns = [
+      'Sl.',
+      'Photo',
+      'Membership ID',
+      'Full Name',
+      'Phone',
+      'DOB',
+      'District',
+      'Team & Coordinator',
+      'Documents',
+    ];
 
-    // 3. Build Word Table
-    const createHeaderCell = (text: string, widthPercent: number) => {
-      return new TableCell({
-        width: { size: widthPercent, type: WidthType.PERCENTAGE },
-        shading: { type: ShadingType.CLEAR, fill: 'DC2626' },
-        children: [
-          new Paragraph({
-            alignment: AlignmentType.CENTER,
-            children: [
-              new TextRun({ text, bold: true, color: 'FFFFFF', size: 18, font: 'Calibri' })
-            ],
-          }),
-        ],
-      });
-    };
-
-    const createDataCell = (
-      text: string, 
-      widthPercent: number, 
-      align: (typeof AlignmentType)[keyof typeof AlignmentType] = AlignmentType.LEFT
-    ) => {
-      return new TableCell({
-        width: { size: widthPercent, type: WidthType.PERCENTAGE },
-        children: [
-          new Paragraph({
-            alignment: align,
-            children: [
-              new TextRun({ text: text || 'N/A', size: 18, font: 'Calibri' })
-            ],
-          }),
-        ],
-      });
-    };
-
-    const headerRow = new TableRow({
+    const tableHeaders = new TableRow({
       tableHeader: true,
-      children: [
-        createHeaderCell('Sl No', 6),
-        createHeaderCell('Member ID', 14),
-        createHeaderCell('Full Name', 18),
-        createHeaderCell('Phone', 13),
-        createHeaderCell('DOB', 11),
-        createHeaderCell('District', 13),
-        createHeaderCell('Team', 9),
-        createHeaderCell('Coordinator', 9),
-      ],
+      children: headerColumns.map(
+        (col) =>
+          new TableCell({
+            shading: { type: ShadingType.CLEAR, fill: 'DC2626' },
+            margins: { top: 100, bottom: 100, left: 100, right: 100 },
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: [
+                  new TextRun({
+                    text: col,
+                    bold: true,
+                    color: 'FFFFFF',
+                    size: 16,
+                  }),
+                ],
+              }),
+            ],
+          })
+      ),
     });
 
-    const dataRows = members.map((m, index) => {
-      return new TableRow({
-        children: [
-          createDataCell(String(index + 1), 6, AlignmentType.CENTER),
-          createDataCell(m.membership_id, 14, AlignmentType.CENTER),
-          createDataCell(m.full_name, 18),
-          createDataCell(m.phone, 13),
-          createDataCell(m.dob, 11, AlignmentType.CENTER),
-          createDataCell(m.district, 13),
-          createDataCell(m.team_name, 9),
-          createDataCell(m.coordinator, 9),
-        ],
-      });
-    });
+    // 2. Data Rows with Photos and Links
+    const dataRows = await Promise.all(
+      (members || []).map(async (m, index) => {
+        const isEven = index % 2 === 0;
+        const rowFill = isEven ? 'FFFFFF' : 'F8FAFC';
 
-    // 4. Create Document
+        // Fetch image buffer and set type explicitly
+        let photoCellChildren: Paragraph[] = [];
+        if (m.photo_url) {
+          const imgBuffer = await fetchImageBuffer(m.photo_url);
+          if (imgBuffer) {
+            photoCellChildren = [
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: [
+                  new ImageRun({
+                    data: imgBuffer,
+                    transformation: {
+                      width: 45,
+                      height: 55,
+                    },
+                    type: 'png',
+                  }),
+                ],
+              }),
+            ];
+          }
+        }
+        if (photoCellChildren.length === 0) {
+          photoCellChildren = [
+            new Paragraph({
+              alignment: AlignmentType.CENTER,
+              children: [new TextRun({ text: 'No Photo', size: 14, color: '94A3B8' })],
+            }),
+          ];
+        }
+
+        // Documents hyperlinks
+        const docLinksChildren: Paragraph[] = [
+          new Paragraph({
+            children: m.aadhar_url
+              ? [
+                  new ExternalHyperlink({
+                    children: [new TextRun({ text: '🔗 Aadhaar Doc', style: 'Hyperlink', size: 15, color: '2563EB' })],
+                    link: m.aadhar_url,
+                  }),
+                ]
+              : [new TextRun({ text: 'Aadhaar: N/A', size: 14, color: '94A3B8' })],
+          }),
+          new Paragraph({
+            children: m.pan_url
+              ? [
+                  new ExternalHyperlink({
+                    children: [new TextRun({ text: '🔗 PAN Doc', style: 'Hyperlink', size: 15, color: '2563EB' })],
+                    link: m.pan_url,
+                  }),
+                ]
+              : [new TextRun({ text: 'PAN: N/A', size: 14, color: '94A3B8' })],
+          }),
+        ];
+
+        return new TableRow({
+          children: [
+            // Sl. No
+            new TableCell({
+              shading: { type: ShadingType.CLEAR, fill: rowFill },
+              children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: String(index + 1), size: 15 })] })],
+            }),
+            // Photo
+            new TableCell({
+              shading: { type: ShadingType.CLEAR, fill: rowFill },
+              children: photoCellChildren,
+            }),
+            // Membership ID
+            new TableCell({
+              shading: { type: ShadingType.CLEAR, fill: rowFill },
+              children: [new Paragraph({ children: [new TextRun({ text: m.membership_id || 'N/A', bold: true, size: 15 })] })],
+            }),
+            // Name
+            new TableCell({
+              shading: { type: ShadingType.CLEAR, fill: rowFill },
+              children: [new Paragraph({ children: [new TextRun({ text: m.full_name || 'N/A', size: 15 })] })],
+            }),
+            // Phone
+            new TableCell({
+              shading: { type: ShadingType.CLEAR, fill: rowFill },
+              children: [new Paragraph({ children: [new TextRun({ text: m.phone || 'N/A', size: 15 })] })],
+            }),
+            // DOB
+            new TableCell({
+              shading: { type: ShadingType.CLEAR, fill: rowFill },
+              children: [new Paragraph({ children: [new TextRun({ text: m.dob || 'N/A', size: 15 })] })],
+            }),
+            // District
+            new TableCell({
+              shading: { type: ShadingType.CLEAR, fill: rowFill },
+              children: [new Paragraph({ children: [new TextRun({ text: m.district || 'N/A', size: 15 })] })],
+            }),
+            // Team & Coordinator
+            new TableCell({
+              shading: { type: ShadingType.CLEAR, fill: rowFill },
+              children: [
+                new Paragraph({ children: [new TextRun({ text: `Team: ${m.team_name || 'N/A'}`, size: 14 })] }),
+                new Paragraph({ children: [new TextRun({ text: `Coord: ${m.coordinator || 'N/A'}`, size: 14, color: '64748B' })] }),
+              ],
+            }),
+            // Documents Links
+            new TableCell({
+              shading: { type: ShadingType.CLEAR, fill: rowFill },
+              children: docLinksChildren,
+            }),
+          ],
+        });
+      })
+    );
+
+    // 3. Document Structure
     const doc = new Document({
       sections: [
         {
           properties: {
-            page: { margin: { top: 720, right: 720, bottom: 720, left: 720 } },
+            page: {
+              margin: { top: 720, bottom: 720, left: 720, right: 720 },
+            },
           },
           children: [
             new Paragraph({
-              text: 'TVK KARNATAKA REGISTRATION DRIVE',
-              heading: HeadingLevel.TITLE,
+              text: 'TVK KARNATAKA - MEMBERSHIP REGISTRY & VERIFICATION',
+              heading: HeadingLevel.HEADING_1,
               alignment: AlignmentType.CENTER,
               spacing: { after: 120 },
-              run: { bold: true, color: 'DC2626', size: 26, font: 'Calibri' },
             }),
             new Paragraph({
               alignment: AlignmentType.CENTER,
-              spacing: { after: 200 },
+              spacing: { after: 300 },
               children: [
                 new TextRun({
-                  text: `Official Member Registry Report | Total Members: ${members.length}`,
-                  italics: true,
-                  size: 19,
-                  color: '4B5563',
-                  font: 'Calibri',
+                  text: `Generated on: ${new Date().toLocaleDateString('en-IN')} | Total Members: ${members?.length || 0}`,
+                  color: '64748B',
+                  size: 18,
                 }),
               ],
             }),
             new Table({
               width: { size: 100, type: WidthType.PERCENTAGE },
-              rows: [headerRow, ...dataRows],
-            }),
-            new Paragraph({
-              spacing: { before: 200 },
-              alignment: AlignmentType.RIGHT,
-              children: [
-                new TextRun({
-                  text: `Generated on: ${new Date().toLocaleDateString('en-IN')}`,
-                  size: 15,
-                  color: '9CA3AF',
-                  font: 'Calibri',
-                }),
-              ],
+              rows: [tableHeaders, ...dataRows],
             }),
           ],
         },
       ],
     });
 
-    // 5. Convert document to buffer
     const buffer = await Packer.toBuffer(doc);
     const dateStamp = new Date().toISOString().split('T')[0];
 
-    // 6. Return response with DOCX Content-Type
-    return new NextResponse(buffer as unknown as BodyInit, {
+    // Convert Buffer to Uint8Array for Web standard Response compatibility
+    return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'Content-Disposition': `attachment; filename="TVK_Members_Registry_${dateStamp}.docx"`,
+        'Content-Disposition': `attachment; filename="TVK_Members_With_Photos_${dateStamp}.docx"`,
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
       },
     });
-
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-    return new NextResponse(`Server error: ${errorMsg}`, { status: 500 });
+    const message = err instanceof Error ? err.message : 'Failed to generate document';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
