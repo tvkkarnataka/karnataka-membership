@@ -28,7 +28,7 @@ export default function MembershipDrive() {
   const [errorMessage, setErrorMessage] = useState('');
   const [isRegistered, setIsRegistered] = useState(false);
 
-  // Form States
+  // Form Fields
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [dob, setDob] = useState('');
@@ -36,7 +36,7 @@ export default function MembershipDrive() {
   const [teamName, setTeamName] = useState('');
   const [coordinator, setCoordinator] = useState('');
 
-  // File States
+  // File Upload States
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [aadharFile, setAadharFile] = useState<File | null>(null);
   const [panFile, setPanFile] = useState<File | null>(null);
@@ -67,6 +67,7 @@ export default function MembershipDrive() {
     e.preventDefault();
     setErrorMessage('');
 
+    // 1. Basic Validation
     if (!isEligibleAge(dob)) {
       setErrorMessage('Applicant must be 18 years or older to register.');
       return;
@@ -79,6 +80,13 @@ export default function MembershipDrive() {
 
     if (!photoFile || !aadharFile || !panFile) {
       setErrorMessage('Please upload all 3 required documents (Photo, Aadhaar, and PAN).');
+      return;
+    }
+
+    // 2. Client-side File Size Validation (Max 5MB per file)
+    const MAX_FILE_SIZE = 5 * 1024 * 1024;
+    if (photoFile.size > MAX_FILE_SIZE || aadharFile.size > MAX_FILE_SIZE || panFile.size > MAX_FILE_SIZE) {
+      setErrorMessage('Each file must be less than 5MB. Please upload a smaller image.');
       return;
     }
 
@@ -102,7 +110,14 @@ export default function MembershipDrive() {
         body: formData,
       });
 
-      const data = await res.json();
+      // 3. Safe JSON response handling to prevent parser crashes
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error('Server returned an invalid response. Please try with smaller image files.');
+      }
+
       setLoading(false);
 
       if (res.ok && data.success) {
@@ -110,9 +125,10 @@ export default function MembershipDrive() {
       } else {
         setErrorMessage(data.error || 'Failed to submit registration. Please try again.');
       }
-    } catch {
+    } catch (err: unknown) {
       setLoading(false);
-      setErrorMessage('Network connection error. Please try again.');
+      const msg = err instanceof Error ? err.message : 'Network connection error. Please try again.';
+      setErrorMessage(msg);
     }
   };
 
@@ -177,6 +193,7 @@ export default function MembershipDrive() {
           </p>
         </div>
 
+        {/* Error Banner */}
         {errorMessage && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center gap-2">
             <AlertCircle size={16} className="shrink-0" />
@@ -184,7 +201,7 @@ export default function MembershipDrive() {
           </div>
         )}
 
-        {/* FORM SECTION */}
+        {/* Form View */}
         {!isRegistered ? (
           <form onSubmit={handleSubmitRegistration} className="space-y-4">
             <div>
@@ -279,7 +296,7 @@ export default function MembershipDrive() {
               </div>
             </div>
 
-            {/* Document Uploads Inputs */}
+            {/* Document Uploads */}
             <div className="border-t border-slate-200 pt-4 space-y-3">
               <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                 <Upload size={14} className="text-red-600" />
@@ -335,7 +352,7 @@ export default function MembershipDrive() {
             </button>
           </form>
         ) : (
-          /* SUCCESS VIEW */
+          /* Success Screen */
           <div className="py-8 text-center space-y-6">
             <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto border-2 border-emerald-200 shadow-sm">
               <CheckCircle2 size={42} className="text-emerald-600" />
