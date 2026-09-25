@@ -157,17 +157,17 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     }
   }
 
-  // 4. Generate glyph paths for all fields (startX = 820)
-  const startX = 820;
+  // 4. Generate glyph paths for all fields (startX = 780)
+  const startX = 780;
 
-  const pathFullName = safeTextToPath(font, fullName, startX, 385, 28, '#000000');
-  const pathDob = safeTextToPath(font, dob, startX, 443, 26, '#000000');
-  const pathGender = safeTextToPath(font, gender, startX, 501, 26, '#000000');
-  const pathTempId = safeTextToPath(font, tempId, startX, 559, 26, '#C00000');
-  const pathDistrict = safeTextToPath(font, district, startX, 617, 26, '#000000');
-  const pathTeamName = safeTextToPath(font, teamName, startX, 675, 24, '#000000');
-  const pathCoordinator = safeTextToPath(font, coordinator, startX, 733, 24, '#000000');
-  const pathPhone = safeTextToPath(font, phone, startX, 791, 28, '#0056B3');
+  const pathFullName = safeTextToPath(font, fullName, startX, 410, 28, '#000000');
+  const pathDob = safeTextToPath(font, dob, startX, 470, 26, '#000000');
+  const pathGender = safeTextToPath(font, gender, startX, 526, 26, '#000000');
+  const pathTempId = safeTextToPath(font, tempId, startX, 582, 26, '#C00000');
+  const pathDistrict = safeTextToPath(font, district, startX, 630, 26, '#000000');
+  const pathTeamName = safeTextToPath(font, teamName, startX, 700, 24, '#000000');
+  const pathCoordinator = safeTextToPath(font, coordinator, startX, 765, 24, '#000000');
+  const pathPhone = safeTextToPath(font, phone, startX, 815, 28, '#0056B3');
 
   const svgVectorOverlay = Buffer.from(`
     <svg width="${canvasWidth}" height="${canvasHeight}" xmlns="http://www.w3.org/2000/svg">
