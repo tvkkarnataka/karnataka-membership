@@ -1,12 +1,39 @@
-import { createClient } from '@supabase/supabase-js';
+import path from 'path';
+import fs from 'fs';
 
 export async function generateIDCardBuffer(member: any): Promise<Buffer> {
-  const fullName = member.full_name || member.fullName || member.name || 'Member';
-  const phone = member.phone || member.phone_number || member.mobile || 'N/A';
+  // Extract values with fallbacks to match Supabase database schema
+  const fullName = member.full_name || member.fullName || member.name || 'Member Name';
+  const dob = member.dob || member.date_of_birth || member.birth_date || 'N/A';
+  const gender = member.gender || 'N/A';
+  const tempId = member.temp_id || member.temporary_id || member.id || 'TVK-2026-001';
   const district = member.district || 'Karnataka';
+  const teamName = member.team_name || member.team || 'State HQ Team';
+  const coordinator = member.coordinator || member.coordinator_name || 'N/A';
+  const phone = member.phone || member.phone_number || member.mobile || 'N/A';
   const photoUrl = member.photo_url || member.photoUrl || member.photo || '';
 
-  // 1. Fetch member photo as base64 data URI if available
+  // 1. Read your background template from public/ folder
+  let backgroundBase64 = '';
+  try {
+    const publicDir = path.join(process.cwd(), 'public');
+    let templatePath = path.join(publicDir, 'id-template.jpg');
+    let contentType = 'image/jpeg';
+
+    if (!fs.existsSync(templatePath)) {
+      templatePath = path.join(publicDir, 'id-template.png');
+      contentType = 'image/png';
+    }
+
+    if (fs.existsSync(templatePath)) {
+      const templateBuffer = fs.readFileSync(templatePath);
+      backgroundBase64 = `data:${contentType};base64,${templateBuffer.toString('base64')}`;
+    }
+  } catch (e) {
+    console.error('Failed to load background template:', e);
+  }
+
+  // 2. Fetch member photo as base64 data URI if available
   let photoBase64 = '';
   if (photoUrl && photoUrl.startsWith('http')) {
     try {
@@ -14,61 +41,68 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
       if (imgRes.ok) {
         const arrayBuffer = await imgRes.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
-        const contentType = imgRes.headers.get('content-type') || 'image/png';
-        photoBase64 = `data:${contentType};base64,${buffer.toString('base64')}`;
+        const type = imgRes.headers.get('content-type') || 'image/png';
+        photoBase64 = `data:${type};base64,${buffer.toString('base64')}`;
       }
     } catch {
       photoBase64 = '';
     }
   }
 
-  // 2. Build the SVG layout for the ID Card
+  // 3. Build SVG overlay matched to the template's dimensions and positions
   const svgString = `
-    <svg width="1200" height="750" viewBox="0 0 1200 750" xmlns="http://www.w3.org/2000/svg">
-      <!-- Background Header Bar -->
-      <rect width="1200" height="750" fill="#FFFFFF" rx="24" />
-      <rect width="1200" height="180" fill="#0B132B" rx="24" />
-      
-      <!-- Title -->
-      <text x="600" y="110" font-family="Arial, sans-serif" font-size="42" font-weight="bold" fill="#FFFFFF" text-anchor="middle">
-        TVK KARNATAKA MEMBERSHIP CARD
-      </text>
-
-      <!-- Member Photo -->
+    <svg width="1024" height="654" viewBox="0 0 1024 654" xmlns="http://www.w3.org/2000/svg">
+      <!-- Background Template -->
       ${
-        photoBase64
-          ? `<image x="100" y="240" width="280" height="350" href="${photoBase64}" preserveAspectRatio="xMidYMid slice" clip-path="inset(0px round 16px)"/>`
-          : `<rect x="100" y="240" width="280" height="350" fill="#E0E0E0" rx="16"/>
-             <text x="240" y="425" font-family="Arial, sans-serif" font-size="28" fill="#666666" text-anchor="middle">No Photo</text>`
+        backgroundBase64
+          ? `<image x="0" y="0" width="1024" height="654" href="${backgroundBase64}" preserveAspectRatio="none"/>`
+          : `<rect width="1024" height="654" fill="#FFFFFF"/>`
       }
 
-      <!-- Details Column -->
-      <text x="440" y="290" font-family="Arial, sans-serif" font-size="30" fill="#666666">Full Name:</text>
-      <text x="440" y="340" font-family="Arial, sans-serif" font-size="38" font-weight="bold" fill="#0B132B">${fullName}</text>
+      <!-- Member Photo (Positions precisely inside the 'PHOTO HERE' frame) -->
+      ${
+        photoBase64
+          ? `<image x="806" y="231" width="176" height="215" href="${photoBase64}" preserveAspectRatio="xMidYMid slice" clip-path="inset(0px round 6px)"/>`
+          : ''
+      }
 
-      <text x="440" y="420" font-family="Arial, sans-serif" font-size="30" fill="#666666">Phone Number:</text>
-      <text x="440" y="470" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="#0056B3">${phone}</text>
+      <!-- Text Overlay next to template colons -->
+      <!-- Name / ಹೆಸರು -->
+      <text x="530" y="254" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="bold" fill="#0B132B">${fullName}</text>
 
-      <text x="440" y="550" font-family="Arial, sans-serif" font-size="30" fill="#666666">District:</text>
-      <text x="440" y="600" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="#0B132B">${district}</text>
+      <!-- DOB / ಜನ್ಮ ದಿನಾಂಕ -->
+      <text x="530" y="291" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="bold" fill="#0B132B">${dob}</text>
 
-      <!-- Card Footer Line -->
-      <rect x="0" y="710" width="1200" height="40" fill="#0B132B" />
+      <!-- Gender / ಲಿಂಗ -->
+      <text x="530" y="328" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="bold" fill="#0B132B">${gender}</text>
+
+      <!-- Temporary ID / ತಾತ್ಕಾಲಿಕ ಐಡಿ -->
+      <text x="530" y="365" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="bold" fill="#C00000">${tempId}</text>
+
+      <!-- District / ಜಿಲ್ಲೆ -->
+      <text x="530" y="402" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="bold" fill="#0B132B">${district}</text>
+
+      <!-- Team Name / ತಂಡದ ಹೆಸರು -->
+      <text x="530" y="439" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="bold" fill="#0B132B">${teamName}</text>
+
+      <!-- Coordinator / ಸಂಯೋಜಕ -->
+      <text x="530" y="476" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="bold" fill="#0B132B">${coordinator}</text>
+
+      <!-- Contact Number / ಸಂಪರ್ಕ ಸಂಖ್ಯೆ -->
+      <text x="530" y="513" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="bold" fill="#0056B3">${phone}</text>
     </svg>
   `;
 
-  // 3. Dynamically import Resvg at runtime to prevent bundler errors
+  // 4. Dynamically import Resvg to render PNG
   const { Resvg } = await import('@resvg/resvg-js');
 
   const resvg = new Resvg(svgString, {
     fitTo: {
       mode: 'width',
-      value: 1200,
+      value: 1024,
     },
   });
 
   const pngData = resvg.render();
-  const pngBuffer = pngData.asPng();
-
-  return Buffer.from(pngBuffer);
+  return Buffer.from(pngData.asPng());
 }
