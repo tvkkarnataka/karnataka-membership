@@ -1,33 +1,49 @@
 import path from 'path';
 import fs from 'fs';
+import * as opentype from 'opentype.js';
 
-let cachedFontBuffer: Buffer | null = null;
+let cachedFont: opentype.Font | null = null;
 
-async function getFontBuffer(): Promise<Buffer | null> {
-  if (cachedFontBuffer) return cachedFontBuffer;
+async function getFont(): Promise<opentype.Font | null> {
+  if (cachedFont) return cachedFont;
   try {
     const fontRes = await fetch(
       'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-700-normal.ttf'
     );
     if (fontRes.ok) {
-      const arrayBuf = await fontRes.arrayBuffer();
-      cachedFontBuffer = Buffer.from(arrayBuf);
-      return cachedFontBuffer;
+      const fontBuffer = await fontRes.arrayBuffer();
+      cachedFont = opentype.parse(fontBuffer);
+      return cachedFont;
     }
   } catch (e) {
-    console.error('Failed to fetch font buffer:', e);
+    console.error('Failed to load font:', e);
   }
   return null;
 }
 
-function escapeXml(str: string): string {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+// Convert plain text into SVG vector path without triggering substitution errors
+function textToPathSvg(
+  font: opentype.Font | null,
+  text: string,
+  x: number,
+  y: number,
+  fontSize: number,
+  color: string
+): string {
+  if (!text) return '';
+  if (!font) {
+    return `<text x="${x}" y="${y}" font-size="${fontSize}" fill="${color}">${text}</text>`;
+  }
+
+  try {
+    // Disable OpenType features to prevent lookup type 62 errors
+    const pathObj = font.getPath(text, x, y, fontSize, { features: {} });
+    pathObj.fill = color;
+    return pathObj.toSVG(2);
+  } catch (e) {
+    console.error(`Error rendering text "${text}":`, e);
+    return `<text x="${x}" y="${y}" font-size="${fontSize}" fill="${color}">${text}</text>`;
+  }
 }
 
 function getMemberValue(member: any, keys: string[], fallback: string = ''): string {
@@ -55,9 +71,9 @@ function getMemberValue(member: any, keys: string[], fallback: string = ''): str
 export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   if (!member) member = {};
 
-  const fontBuffer = await getFontBuffer();
+  const font = await getFont();
 
-  // Map database properties based on your Supabase raw record keys
+  // Extract fields matching your Supabase row schema
   const fullName = getMemberValue(member, ['full_name', 'fullname', 'name']);
   const dob = getMemberValue(member, ['dob', 'date_of_birth']);
   const gender = getMemberValue(member, ['gender', 'sex']);
@@ -88,7 +104,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     console.error('Failed to load background template:', e);
   }
 
-  // 2. Fetch photo as Base64 Data URI
+  // 2. Fetch member photo
   let photoBase64 = '';
   if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
@@ -104,8 +120,18 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     }
   }
 
-  // 3. Construct clean SVG text nodes using `dominant-baseline="alphabetic"`
+  // 3. Convert all text fields into vector paths at startX = 515
   const startX = 540;
+  const pathFullName = textToPathSvg(font, fullName, startX, 242, 18, '#000000');
+  const pathDob = textToPathSvg(font, dob, startX, 279, 17, '#000000');
+  const pathGender = textToPathSvg(font, gender, startX, 316, 17, '#000000');
+  const pathTempId = textToPathSvg(font, tempId, startX, 353, 17, '#C00000');
+  const pathDistrict = textToPathSvg(font, district, startX, 390, 17, '#000000');
+  const pathTeamName = textToPathSvg(font, teamName, startX, 427, 15, '#000000');
+  const pathCoordinator = textToPathSvg(font, coordinator, startX, 464, 15, '#000000');
+  const pathPhone = textToPathSvg(font, phone, startX, 501, 18, '#0056B3');
+
+  // 4. Construct SVG
   const svgString = `
     <svg width="1024" height="654" viewBox="0 0 1024 654" xmlns="http://www.w3.org/2000/svg">
       <!-- Background Template -->
@@ -122,50 +148,26 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
           : ''
       }
 
-      <!-- Native Resvg Font Text Overlay -->
-      <g font-family="Roboto" font-weight="bold">
-        <!-- Name / ಹೆಸರು -->
-        <text x="${startX}" y="246" font-size="18" fill="#000000">${escapeXml(fullName)}</text>
-
-        <!-- DOB / ಜನ್ಮ ದಿನಾಂಕ -->
-        <text x="${startX}" y="283" font-size="17" fill="#000000">${escapeXml(dob)}</text>
-
-        <!-- Gender / ಲಿಂಗ -->
-        <text x="${startX}" y="320" font-size="17" fill="#000000">${escapeXml(gender)}</text>
-
-        <!-- Temporary ID / ತಾತ್ಕಾಲಿಕ ಐಡಿ -->
-        <text x="${startX}" y="357" font-size="17" fill="#C00000">${escapeXml(tempId)}</text>
-
-        <!-- District / ಜಿಲ್ಲೆ -->
-        <text x="${startX}" y="394" font-size="17" fill="#000000">${escapeXml(district)}</text>
-
-        <!-- Team Name / ತಂಡದ ಹೆಸರು -->
-        <text x="${startX}" y="431" font-size="16" fill="#000000">${escapeXml(teamName)}</text>
-
-        <!-- Coordinator / ಸಂಯೋಜಕ -->
-        <text x="${startX}" y="468" font-size="16" fill="#000000">${escapeXml(coordinator)}</text>
-
-        <!-- Contact Number / ಸಂಪರ್ಕ ಸಂಖ್ಯೆ -->
-        <text x="${startX}" y="505" font-size="18" fill="#0056B3">${escapeXml(phone)}</text>
+      <!-- Vector Path Overlay -->
+      <g>
+        ${pathFullName}
+        ${pathDob}
+        ${pathGender}
+        ${pathTempId}
+        ${pathDistrict}
+        ${pathTeamName}
+        ${pathCoordinator}
+        ${pathPhone}
       </g>
     </svg>
   `;
 
-  // 4. Pass font buffer directly to Resvg options
+  // 5. Render PNG
   const { Resvg } = await import('@resvg/resvg-js');
-  
-  const resvgOptions: any = {
+  const resvg = new Resvg(svgString, {
     fitTo: { mode: 'width', value: 1024 },
-  };
+  });
 
-  if (fontBuffer) {
-    resvgOptions.font = {
-      fontBuffers: [fontBuffer],
-      defaultFontFamily: 'Roboto',
-    };
-  }
-
-  const resvg = new Resvg(svgString, resvgOptions);
   const pngData = resvg.render();
   return Buffer.from(pngData.asPng());
 }
