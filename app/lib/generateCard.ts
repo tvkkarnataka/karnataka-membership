@@ -1,10 +1,10 @@
 import path from 'path';
 import fs from 'fs';
-import opentype from 'opentype.js';
+import * as opentype from 'opentype.js';
 
 let cachedFont: opentype.Font | null = null;
 
-// Helper to fetch and load opentype font once into memory
+// Helper to fetch and load opentype font into memory
 async function getFont(): Promise<opentype.Font | null> {
   if (cachedFont) return cachedFont;
   try {
@@ -33,7 +33,6 @@ function textToPathSvg(
 ): string {
   if (!text) return '';
   if (!font) {
-    // Basic SVG fallback if font fetch fails
     return `<text x="${x}" y="${y}" font-size="${fontSize}" fill="${color}" font-weight="bold">${text}</text>`;
   }
 
@@ -74,7 +73,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
 
   const font = await getFont();
 
-  // Extract values with fallbacks
+  // Extract database values with defaults
   const fullName = getMemberValue(member, ['full_name', 'fullname', 'name', 'member_name', 'Name'], 'Member Name');
   const dob = getMemberValue(member, ['dob', 'date_of_birth', 'birth_date', 'DOB'], 'DD/MM/YYYY');
   const gender = getMemberValue(member, ['gender', 'sex', 'Gender'], 'Male');
@@ -85,7 +84,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   const phone = getMemberValue(member, ['phone', 'phone_number', 'mobile', 'Phone'], '9876543210');
   const photoUrl = getMemberValue(member, ['photo_url', 'photoUrl', 'photo', 'avatar_url', 'Photo'], '');
 
-  // 1. Read template from public directory
+  // 1. Read background template from public directory
   let backgroundBase64 = '';
   const publicDir = path.join(process.cwd(), 'public');
   try {
@@ -105,7 +104,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     console.error('Failed to load background template:', e);
   }
 
-  // 2. Fetch photo as Base64 URI
+  // 2. Fetch member photo as Base64 URI
   let photoBase64 = '';
   if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
@@ -121,7 +120,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     }
   }
 
-  // 3. Convert all member detail text to pure vector paths
+  // 3. Convert all member details into vector path elements
   const startX = 330;
   const pathFullName = textToPathSvg(font, fullName, startX, 252, 18, '#000000');
   const pathDob = textToPathSvg(font, dob, startX, 289, 17, '#000000');
@@ -132,7 +131,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   const pathCoordinator = textToPathSvg(font, coordinator, startX, 474, 17, '#000000');
   const pathPhone = textToPathSvg(font, phone, startX, 511, 18, '#0056B3');
 
-  // 4. Build SVG with paths embedded
+  // 4. Construct output SVG
   const svgString = `
     <svg width="1024" height="654" viewBox="0 0 1024 654" xmlns="http://www.w3.org/2000/svg">
       <!-- Background Template -->
@@ -149,7 +148,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
           : ''
       }
 
-      <!-- Rendered Vector Path Text Elements -->
+      <!-- Vector Path Text Elements -->
       <g>
         ${pathFullName}
         ${pathDob}
