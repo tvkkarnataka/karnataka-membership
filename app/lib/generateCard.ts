@@ -1,26 +1,6 @@
 import path from 'path';
 import fs from 'fs';
 
-let cachedFontBase64: string | null = null;
-
-// Helper to fetch and convert font buffer to Base64 once
-async function getFontBase64(): Promise<string> {
-  if (cachedFontBase64) return cachedFontBase64;
-  try {
-    const fontRes = await fetch(
-      'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-700-normal.ttf'
-    );
-    if (fontRes.ok) {
-      const fontArray = await fontRes.arrayBuffer();
-      cachedFontBase64 = Buffer.from(fontArray).toString('base64');
-      return cachedFontBase64;
-    }
-  } catch (e) {
-    console.error('Failed to fetch font for embedding:', e);
-  }
-  return '';
-}
-
 function escapeXml(str: string): string {
   if (!str) return '';
   return String(str)
@@ -56,9 +36,7 @@ function getMemberValue(member: any, keys: string[], fallback: string = ''): str
 export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   if (!member) member = {};
 
-  const fontBase64 = await getFontBase64();
-
-  // Map values directly matching your Supabase row keys
+  // Extract member details from database row
   const fullName = getMemberValue(member, ['full_name', 'fullname', 'name']);
   const dob = getMemberValue(member, ['dob', 'date_of_birth']);
   const gender = getMemberValue(member, ['gender', 'sex']);
@@ -69,9 +47,30 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   const phone = getMemberValue(member, ['phone', 'mobile']);
   const photoUrl = getMemberValue(member, ['photo_url', 'avatar_url']);
 
-  // 1. Read background template from public directory
-  let backgroundBase64 = '';
   const publicDir = path.join(process.cwd(), 'public');
+
+  // 1. Read local font file from public folder
+  let fontBuffer: Buffer | null = null;
+  const localFontPath = path.join(publicDir, 'Roboto-Bold.ttf');
+  if (fs.existsSync(localFontPath)) {
+    fontBuffer = fs.readFileSync(localFontPath);
+  } else {
+    // Online fallback if local file is missing
+    try {
+      const fontRes = await fetch(
+        'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-700-normal.ttf'
+      );
+      if (fontRes.ok) {
+        const fontArray = await fontRes.arrayBuffer();
+        fontBuffer = Buffer.from(fontArray);
+      }
+    } catch (e) {
+      console.error('Failed to fetch fallback font:', e);
+    }
+  }
+
+  // 2. Read background template
+  let backgroundBase64 = '';
   try {
     let templatePath = path.join(publicDir, 'id-template.png');
     let contentType = 'image/png';
@@ -89,7 +88,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     console.error('Failed to load background template:', e);
   }
 
-  // 2. Fetch member photo as Base64 Data URI
+  // 3. Fetch member photo as Base64 URI
   let photoBase64 = '';
   if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
@@ -105,25 +104,10 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     }
   }
 
-  // 3. Construct SVG string with Base64 font embedded directly in @font-face
+  // 4. Build SVG string
   const startX = 540;
   const svgString = `
     <svg width="1024" height="654" viewBox="0 0 1024 654" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        ${
-          fontBase64
-            ? `<style>
-                @font-face {
-                  font-family: 'RobotoEmbedded';
-                  src: url('data:font/ttf;charset=utf-8;base64,${fontBase64}') format('truetype');
-                  font-weight: bold;
-                  font-style: normal;
-                }
-              </style>`
-            : ''
-        }
-      </defs>
-
       <!-- Background Template -->
       ${
         backgroundBase64
@@ -138,8 +122,8 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
           : ''
       }
 
-      <!-- Embedded Font SVG Text Elements -->
-      <g font-family="RobotoEmbedded, sans-serif" font-weight="bold">
+      <!-- Clean SVG Text Overlay -->
+      <g font-family="Roboto" font-weight="bold">
         <!-- Name / ಹೆಸರು -->
         <text x="${startX}" y="246" font-size="18" fill="#000000">${escapeXml(fullName)}</text>
 
@@ -167,12 +151,21 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     </svg>
   `;
 
-  // 4. Render PNG
+  // 5. Render PNG with Resvg using loaded local font buffer
   const { Resvg } = await import('@resvg/resvg-js');
-  const resvg = new Resvg(svgString, {
+  
+  const resvgOptions: any = {
     fitTo: { mode: 'width', value: 1024 },
-  });
+  };
 
+  if (fontBuffer) {
+    resvgOptions.font = {
+      fontBuffers: [fontBuffer],
+      defaultFontFamily: 'Roboto',
+    };
+  }
+
+  const resvg = new Resvg(svgString, resvgOptions);
   const pngData = resvg.render();
   return Buffer.from(pngData.asPng());
 }
