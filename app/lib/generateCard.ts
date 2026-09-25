@@ -71,15 +71,15 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
 
   const font = await getFont();
 
-  // Extract database values with clear fallbacks so fields never render blank
-  const fullName = getMemberValue(member, ['full_name', 'fullname', 'name', 'member_name', 'Name'], 'Member Name');
-  const dob = getMemberValue(member, ['dob', 'date_of_birth', 'birth_date', 'DOB'], 'DD/MM/YYYY');
-  const gender = getMemberValue(member, ['gender', 'sex', 'Gender'], 'Male');
-  const tempId = getMemberValue(member, ['membership_id', 'temporary_id', 'id', 'member_id', 'ID'], 'TVK-2026-001');
-  const district = getMemberValue(member, ['district', 'city', 'location', 'District'], 'Karnataka');
+  // Extract member registration details from Supabase schema
+  const fullName = getMemberValue(member, ['full_name', 'fullname', 'name', 'member_name', 'Name'], '');
+  const dob = getMemberValue(member, ['dob', 'date_of_birth', 'birth_date', 'DOB'], '');
+  const gender = getMemberValue(member, ['gender', 'sex', 'Gender'], '');
+  const tempId = getMemberValue(member, ['membership_id', 'temporary_id', 'id', 'member_id', 'ID'], '');
+  const district = getMemberValue(member, ['district', 'city', 'location', 'District'], '');
   const teamName = getMemberValue(member, ['team_name', 'team', 'Team'], 'State HQ Team');
-  const coordinator = getMemberValue(member, ['coordinator', 'coordinator_name', 'Coordinator'], 'HQ Team');
-  const phone = getMemberValue(member, ['phone', 'phone_number', 'mobile', 'Phone'], '9876543210');
+  const coordinator = getMemberValue(member, ['coordinator', 'coordinator_name', 'Coordinator'], '');
+  const phone = getMemberValue(member, ['phone', 'phone_number', 'mobile', 'Phone'], '');
   const photoUrl = getMemberValue(member, ['photo_url', 'photoUrl', 'photo', 'avatar_url', 'Photo'], '');
 
   // 1. Read background template
@@ -102,7 +102,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     console.error('Failed to load background template:', e);
   }
 
-  // 2. Fetch photo
+  // 2. Fetch member photo
   let photoBase64 = '';
   if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
@@ -118,8 +118,8 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     }
   }
 
-  // 3. Convert all member details into vector path elements with baseline offsets (y shifted up by ~12px)
-  const startX = 330;
+  // 3. Shift x coordinate right to 510 to land directly on top of the blank underline
+  const startX = 510;
   const pathFullName = textToPathSvg(font, fullName, startX, 242, 18, '#000000');
   const pathDob = textToPathSvg(font, dob, startX, 279, 17, '#000000');
   const pathGender = textToPathSvg(font, gender, startX, 316, 17, '#000000');
@@ -129,7 +129,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   const pathCoordinator = textToPathSvg(font, coordinator, startX, 464, 17, '#000000');
   const pathPhone = textToPathSvg(font, phone, startX, 501, 18, '#0056B3');
 
-  // 4. Construct output SVG
+  // 4. Construct SVG
   const svgString = `
     <svg width="1024" height="654" viewBox="0 0 1024 654" xmlns="http://www.w3.org/2000/svg">
       <!-- Background Template -->
@@ -146,7 +146,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
           : ''
       }
 
-      <!-- Vector Path Text Elements -->
+      <!-- Vector Path Text Elements overlaying blank underlines -->
       <g>
         ${pathFullName}
         ${pathDob}
