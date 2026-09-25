@@ -83,13 +83,13 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
         const rawPhotoBuffer = Buffer.from(photoArrBuffer);
 
         const processedPhoto = await sharp(rawPhotoBuffer)
-          .resize(250, 300, { fit: 'cover' })
+          .resize(260, 310, { fit: 'cover' })
           .toBuffer();
 
         compositeLayers.push({
           input: processedPhoto,
           left: 1210,
-          top: 400,
+          top: 410,
         });
       }
     } catch (e) {
