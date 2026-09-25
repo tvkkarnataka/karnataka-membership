@@ -9,11 +9,22 @@ const supabaseAdmin = createClient(
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { fullName, phone, dob, district, teamName, coordinator, photoUrl, aadharUrl, panUrl } = body;
+    const { 
+      fullName, 
+      phone, 
+      dob, 
+      gender, 
+      district, 
+      teamName, 
+      coordinator, 
+      photoUrl, 
+      aadharUrl, 
+      panUrl 
+    } = body;
 
-    if (!fullName || !phone || !dob || !district || !photoUrl || !aadharUrl || !panUrl) {
+    if (!fullName || !phone || !dob || !gender || !district || !photoUrl || !aadharUrl || !panUrl) {
       return NextResponse.json(
-        { success: false, error: 'Please fill in all fields and ensure documents are uploaded.' },
+        { success: false, error: 'Please fill in all fields (including Gender) and ensure documents are uploaded.' },
         { status: 400 }
       );
     }
@@ -51,6 +62,7 @@ export async function POST(req: NextRequest) {
           full_name: fullName.trim(),
           phone: sanitizedPhone,
           dob: dob,
+          gender: gender ? gender.trim() : null, // <--- Passes Gender to Supabase
           district: district.trim(),
           team_name: teamName ? teamName.trim() : null,
           coordinator: coordinator ? coordinator.trim() : null,
