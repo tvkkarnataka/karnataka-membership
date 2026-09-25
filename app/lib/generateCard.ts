@@ -21,7 +21,7 @@ async function getFont(): Promise<opentype.Font | null> {
   return null;
 }
 
-// Convert plain text into SVG vector path without triggering substitution errors
+// Convert plain text into SVG vector path without triggering OpenType lookup errors
 function textToPathSvg(
   font: opentype.Font | null,
   text: string,
@@ -36,7 +36,7 @@ function textToPathSvg(
   }
 
   try {
-    // Disable OpenType features to prevent lookup type 62 errors
+    // Setting features: {} bypasses OpenType substitution lookup errors
     const pathObj = font.getPath(text, x, y, fontSize, { features: {} });
     pathObj.fill = color;
     return pathObj.toSVG(2);
@@ -73,7 +73,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
 
   const font = await getFont();
 
-  // Extract fields matching your Supabase row schema
+  // Extract fields matching your Supabase row keys
   const fullName = getMemberValue(member, ['full_name', 'fullname', 'name']);
   const dob = getMemberValue(member, ['dob', 'date_of_birth']);
   const gender = getMemberValue(member, ['gender', 'sex']);
@@ -84,7 +84,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   const phone = getMemberValue(member, ['phone', 'mobile']);
   const photoUrl = getMemberValue(member, ['photo_url', 'avatar_url']);
 
-  // 1. Read background template
+  // 1. Read background template from public directory
   let backgroundBase64 = '';
   const publicDir = path.join(process.cwd(), 'public');
   try {
@@ -104,7 +104,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     console.error('Failed to load background template:', e);
   }
 
-  // 2. Fetch member photo
+  // 2. Fetch member photo as Base64 Data URI
   let photoBase64 = '';
   if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
@@ -120,7 +120,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     }
   }
 
-  // 3. Convert all text fields into vector paths at startX = 515
+  // 3. Convert all text fields into vector paths starting at x = 515
   const startX = 540;
   const pathFullName = textToPathSvg(font, fullName, startX, 242, 18, '#000000');
   const pathDob = textToPathSvg(font, dob, startX, 279, 17, '#000000');
@@ -131,7 +131,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   const pathCoordinator = textToPathSvg(font, coordinator, startX, 464, 15, '#000000');
   const pathPhone = textToPathSvg(font, phone, startX, 501, 18, '#0056B3');
 
-  // 4. Construct SVG
+  // 4. Construct SVG string
   const svgString = `
     <svg width="1024" height="654" viewBox="0 0 1024 654" xmlns="http://www.w3.org/2000/svg">
       <!-- Background Template -->
@@ -162,7 +162,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     </svg>
   `;
 
-  // 5. Render PNG
+  // 5. Render PNG Buffer
   const { Resvg } = await import('@resvg/resvg-js');
   const resvg = new Resvg(svgString, {
     fitTo: { mode: 'width', value: 1024 },
