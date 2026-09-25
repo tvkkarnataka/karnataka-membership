@@ -1,49 +1,34 @@
 import path from 'path';
 import fs from 'fs';
-import * as opentype from 'opentype.js';
 
-let cachedFont: opentype.Font | null = null;
+let cachedFontBase64: string | null = null;
 
-async function getFont(): Promise<opentype.Font | null> {
-  if (cachedFont) return cachedFont;
+// Fetch and convert font buffer to Base64 once
+async function getFontBase64(): Promise<string> {
+  if (cachedFontBase64) return cachedFontBase64;
   try {
     const fontRes = await fetch(
       'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-700-normal.ttf'
     );
     if (fontRes.ok) {
-      const fontBuffer = await fontRes.arrayBuffer();
-      cachedFont = opentype.parse(fontBuffer);
-      return cachedFont;
+      const fontArray = await fontRes.arrayBuffer();
+      cachedFontBase64 = Buffer.from(fontArray).toString('base64');
+      return cachedFontBase64;
     }
   } catch (e) {
-    console.error('Failed to load font:', e);
+    console.error('Failed to fetch font for embedding:', e);
   }
-  return null;
+  return '';
 }
 
-// Convert plain text into SVG vector path without triggering OpenType lookup errors
-function textToPathSvg(
-  font: opentype.Font | null,
-  text: string,
-  x: number,
-  y: number,
-  fontSize: number,
-  color: string
-): string {
-  if (!text) return '';
-  if (!font) {
-    return `<text x="${x}" y="${y}" font-size="${fontSize}" fill="${color}">${text}</text>`;
-  }
-
-  try {
-    // Setting features: {} bypasses OpenType substitution lookup errors
-    const pathObj = font.getPath(text, x, y, fontSize, { features: {} });
-    pathObj.fill = color;
-    return pathObj.toSVG(2);
-  } catch (e) {
-    console.error(`Error rendering text "${text}":`, e);
-    return `<text x="${x}" y="${y}" font-size="${fontSize}" fill="${color}">${text}</text>`;
-  }
+function escapeXml(str: string): string {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }
 
 function getMemberValue(member: any, keys: string[], fallback: string = ''): string {
@@ -71,9 +56,9 @@ function getMemberValue(member: any, keys: string[], fallback: string = ''): str
 export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   if (!member) member = {};
 
-  const font = await getFont();
+  const fontBase64 = await getFontBase64();
 
-  // Extract fields matching your Supabase row keys
+  // Map values directly matching your Supabase row structure
   const fullName = getMemberValue(member, ['full_name', 'fullname', 'name']);
   const dob = getMemberValue(member, ['dob', 'date_of_birth']);
   const gender = getMemberValue(member, ['gender', 'sex']);
@@ -120,20 +105,25 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     }
   }
 
-  // 3. Convert all text fields into vector paths starting at x = 515
+  // 3. Build SVG with font embedded via @font-face Data URI
   const startX = 540;
-  const pathFullName = textToPathSvg(font, fullName, startX, 242, 18, '#000000');
-  const pathDob = textToPathSvg(font, dob, startX, 279, 17, '#000000');
-  const pathGender = textToPathSvg(font, gender, startX, 316, 17, '#000000');
-  const pathTempId = textToPathSvg(font, tempId, startX, 353, 17, '#C00000');
-  const pathDistrict = textToPathSvg(font, district, startX, 390, 17, '#000000');
-  const pathTeamName = textToPathSvg(font, teamName, startX, 427, 15, '#000000');
-  const pathCoordinator = textToPathSvg(font, coordinator, startX, 464, 15, '#000000');
-  const pathPhone = textToPathSvg(font, phone, startX, 501, 18, '#0056B3');
-
-  // 4. Construct SVG string
   const svgString = `
     <svg width="1024" height="654" viewBox="0 0 1024 654" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        ${
+          fontBase64
+            ? `<style>
+                @font-face {
+                  font-family: 'RobotoEmbedded';
+                  src: url('data:font/ttf;charset=utf-8;base64,${fontBase64}') format('truetype');
+                  font-weight: bold;
+                  font-style: normal;
+                }
+              </style>`
+            : ''
+        }
+      </defs>
+
       <!-- Background Template -->
       ${
         backgroundBase64
@@ -148,21 +138,36 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
           : ''
       }
 
-      <!-- Vector Path Overlay -->
-      <g>
-        ${pathFullName}
-        ${pathDob}
-        ${pathGender}
-        ${pathTempId}
-        ${pathDistrict}
-        ${pathTeamName}
-        ${pathCoordinator}
-        ${pathPhone}
+      <!-- Embedded Font SVG Text Elements -->
+      <g font-family="RobotoEmbedded, sans-serif" font-weight="bold">
+        <!-- Name / ಹೆಸರು -->
+        <text x="${startX}" y="246" font-size="18" fill="#000000">${escapeXml(fullName)}</text>
+
+        <!-- DOB / ಜನ್ಮ ದಿನಾಂಕ -->
+        <text x="${startX}" y="283" font-size="17" fill="#000000">${escapeXml(dob)}</text>
+
+        <!-- Gender / ಲಿಂಗ -->
+        <text x="${startX}" y="320" font-size="17" fill="#000000">${escapeXml(gender)}</text>
+
+        <!-- Temporary ID / ತಾತ್ಕಾಲಿಕ ಐಡಿ -->
+        <text x="${startX}" y="357" font-size="17" fill="#C00000">${escapeXml(tempId)}</text>
+
+        <!-- District / ಜಿಲ್ಲೆ -->
+        <text x="${startX}" y="394" font-size="17" fill="#000000">${escapeXml(district)}</text>
+
+        <!-- Team Name / ತಂಡದ ಹೆಸರು -->
+        <text x="${startX}" y="431" font-size="15" fill="#000000">${escapeXml(teamName)}</text>
+
+        <!-- Coordinator / ಸಂಯೋಜಕ -->
+        <text x="${startX}" y="468" font-size="15" fill="#000000">${escapeXml(coordinator)}</text>
+
+        <!-- Contact Number / ಸಂಪರ್ಕ ಸಂಖ್ಯೆ -->
+        <text x="${startX}" y="505" font-size="18" fill="#0056B3">${escapeXml(phone)}</text>
       </g>
     </svg>
   `;
 
-  // 5. Render PNG Buffer
+  // 4. Render PNG
   const { Resvg } = await import('@resvg/resvg-js');
   const resvg = new Resvg(svgString, {
     fitTo: { mode: 'width', value: 1024 },
