@@ -10,9 +10,13 @@ import {
   WidthType,
   TextRun,
   ImageRun,
+  ExternalHyperlink,
+  BorderStyle,
+  VerticalAlign,
+  AlignmentType,
 } from 'docx';
 
-// Helper function to fetch remote image
+// Helper function to fetch remote images for embedding
 async function fetchImageBuffer(url: string): Promise<Uint8Array | null> {
   if (!url || !url.startsWith('http')) return null;
   try {
@@ -23,6 +27,88 @@ async function fetchImageBuffer(url: string): Promise<Uint8Array | null> {
   } catch {
     return null;
   }
+}
+
+// Clean border configuration
+const tableBorders = {
+  top: { style: BorderStyle.SINGLE, size: 4, color: 'CCCCCC' },
+  bottom: { style: BorderStyle.SINGLE, size: 4, color: 'CCCCCC' },
+  left: { style: BorderStyle.SINGLE, size: 4, color: 'CCCCCC' },
+  right: { style: BorderStyle.SINGLE, size: 4, color: 'CCCCCC' },
+  insideHorizontal: { style: BorderStyle.SINGLE, size: 4, color: 'E0E0E0' },
+  insideVertical: { style: BorderStyle.SINGLE, size: 4, color: 'E0E0E0' },
+};
+
+// Standard padding for clean cell spacing
+const cellMargins = {
+  top: 120,
+  bottom: 120,
+  left: 150,
+  right: 150,
+};
+
+// Helper for header cells with background shading
+function createHeaderCell(text: string, widthPercent: number): TableCell {
+  return new TableCell({
+    width: { size: widthPercent, type: WidthType.PERCENTAGE },
+    shading: { fill: '0B132B' }, // Dark Navy Header
+    verticalAlign: VerticalAlign.CENTER,
+    margins: cellMargins,
+    children: [
+      new Paragraph({
+        alignment: AlignmentType.LEFT,
+        children: [new TextRun({ text, bold: true, color: 'FFFFFF', size: 20 })],
+      }),
+    ],
+  });
+}
+
+// Helper for body text cells
+function createBodyCell(text: string, widthPercent: number): TableCell {
+  return new TableCell({
+    width: { size: widthPercent, type: WidthType.PERCENTAGE },
+    verticalAlign: VerticalAlign.CENTER,
+    margins: cellMargins,
+    children: [
+      new Paragraph({
+        alignment: AlignmentType.LEFT,
+        children: [new TextRun({ text, size: 18, color: '333333' })],
+      }),
+    ],
+  });
+}
+
+// Helper for clickable hyperlink cells
+function createClickableCell(displayText: string, targetUrl: string, widthPercent: number): TableCell {
+  if (!targetUrl || targetUrl === 'N/A' || !targetUrl.startsWith('http')) {
+    return createBodyCell('N/A', widthPercent);
+  }
+
+  return new TableCell({
+    width: { size: widthPercent, type: WidthType.PERCENTAGE },
+    verticalAlign: VerticalAlign.CENTER,
+    margins: cellMargins,
+    children: [
+      new Paragraph({
+        alignment: AlignmentType.LEFT,
+        children: [
+          new ExternalHyperlink({
+            children: [
+              new TextRun({
+                text: displayText,
+                style: 'Hyperlink',
+                color: '0056B3',
+                underline: {},
+                bold: true,
+                size: 18,
+              }),
+            ],
+            link: targetUrl,
+          }),
+        ],
+      }),
+    ],
+  });
 }
 
 export async function GET(req: Request) {
@@ -51,57 +137,70 @@ export async function GET(req: Request) {
       process.env.NEXT_PUBLIC_SITE_URL ||
       'https://tvkkarnatakahq.netlify.app';
 
-    // Header row
+    // Header row with explicit column width percentages (totaling 100%)
     const headerRow = new TableRow({
+      cantSplit: true,
       children: [
-        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Photo', bold: true })] })] }),
-        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Full Name', bold: true })] })] }),
-        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Phone Number', bold: true })] })] }),
-        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'District', bold: true })] })] }),
-        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'ID Card Link', bold: true })] })] }),
-        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Aadhaar Link', bold: true })] })] }),
-        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'PAN Link', bold: true })] })] }),
+        createHeaderCell('Photo', 12),
+        createHeaderCell('Full Name', 22),
+        createHeaderCell('Phone', 16),
+        createHeaderCell('District', 16),
+        createHeaderCell('ID Card', 12),
+        createHeaderCell('Aadhaar', 11),
+        createHeaderCell('PAN', 11),
       ],
     });
 
-    // Asynchronously construct rows with images
+    // Build data rows
     const dataRows = await Promise.all(
       (members || []).map(async (m) => {
         const phone = m.phone_number || m.phone || '';
         const photoUrl = m.photo_url || m.photoUrl || m.photo || '';
-        const aadhaarUrl = m.aadhaar_url || m.aadhaar_link || m.aadhaar || 'N/A';
-        const panUrl = m.pan_url || m.pan_link || m.pan || 'N/A';
+        const aadhaarUrl = m.aadhaar_url || m.aadhaar_link || m.aadhaar || '';
+        const panUrl = m.pan_url || m.pan_link || m.pan || '';
 
         const idCardUrl = phone
           ? `${origin}/api/download-id-card?phone=${phone}&secret=Tvk_ka_hq_2026`
-          : 'N/A';
+          : '';
 
         let photoElement: Paragraph;
         const imgBytes = await fetchImageBuffer(photoUrl);
 
         if (imgBytes) {
           photoElement = new Paragraph({
+            alignment: AlignmentType.CENTER,
             children: [
               new ImageRun({
                 data: imgBytes,
-                transformation: { width: 60, height: 75 },
-                type: 'png', // Specified type for docx ImageRun
+                transformation: { width: 50, height: 65 },
+                type: 'png',
               }),
             ],
           });
         } else {
-          photoElement = new Paragraph('No Photo');
+          photoElement = new Paragraph({
+            alignment: AlignmentType.CENTER,
+            children: [new TextRun({ text: 'No Photo', size: 16, color: '888888' })],
+          });
         }
 
+        const photoCell = new TableCell({
+          width: { size: 12, type: WidthType.PERCENTAGE },
+          verticalAlign: VerticalAlign.CENTER,
+          margins: cellMargins,
+          children: [photoElement],
+        });
+
         return new TableRow({
+          cantSplit: true,
           children: [
-            new TableCell({ children: [photoElement] }),
-            new TableCell({ children: [new Paragraph(m.full_name || m.fullName || 'N/A')] }),
-            new TableCell({ children: [new Paragraph(phone || 'N/A')] }),
-            new TableCell({ children: [new Paragraph(m.district || 'N/A')] }),
-            new TableCell({ children: [new Paragraph(idCardUrl)] }),
-            new TableCell({ children: [new Paragraph(aadhaarUrl)] }),
-            new TableCell({ children: [new Paragraph(panUrl)] }),
+            photoCell,
+            createBodyCell(m.full_name || m.fullName || 'N/A', 22),
+            createBodyCell(phone || 'N/A', 16),
+            createBodyCell(m.district || 'N/A', 16),
+            createClickableCell('View ID Card', idCardUrl, 12),
+            createClickableCell('View Aadhaar', aadhaarUrl, 11),
+            createClickableCell('View PAN', panUrl, 11),
           ],
         });
       })
@@ -119,6 +218,7 @@ export async function GET(req: Request) {
             new Table({
               rows: [headerRow, ...dataRows],
               width: { size: 100, type: WidthType.PERCENTAGE },
+              borders: tableBorders,
             }),
           ],
         },
