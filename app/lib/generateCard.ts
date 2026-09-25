@@ -39,7 +39,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
 
   const publicDir = path.join(process.cwd(), 'public');
 
-  // 1. Read background template
+  // 1. Read template image
   let templatePath = path.join(publicDir, 'id-template.png');
   if (!fs.existsSync(templatePath)) {
     templatePath = path.join(publicDir, 'id-template.jpg');
@@ -61,7 +61,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
       .toBuffer();
   }
 
-  // 2. Extract database values matching Supabase raw row keys
+  // 2. Extract database values
   const fullName = getMemberValue(member, ['full_name', 'fullname', 'name']);
   const dob = getMemberValue(member, ['dob', 'date_of_birth']);
   const gender = getMemberValue(member, ['gender', 'sex']);
@@ -74,7 +74,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
 
   const compositeLayers: Array<{ input: Buffer; top?: number; left?: number }> = [];
 
-  // 3. Process Member Photo & Place Directly Inside Photo Frame (left: 808, top: 242, width: 170, height: 210)
+  // 3. Process Member Photo & Position at left: 808, top: 242 (inside the white photo frame)
   if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
       const imgRes = await fetch(photoUrl);
@@ -82,7 +82,6 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
         const photoArrBuffer = await imgRes.arrayBuffer();
         const rawPhotoBuffer = Buffer.from(photoArrBuffer);
 
-        // Crop & Resize photo to fit inside frame exactly
         const processedPhoto = await sharp(rawPhotoBuffer)
           .resize(170, 210, { fit: 'cover' })
           .toBuffer();
@@ -98,17 +97,17 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     }
   }
 
-  // 4. Clean Vector SVG Overlay for Member Text Fields (startX = 515)
+  // 4. Render SVG text overlay ONLY for the field values (x: 515)
   const startX = 540;
   const svgTextOverlay = Buffer.from(`
     <svg width="1024" height="654" xmlns="http://www.w3.org/2000/svg">
       <style>
-        .card-text {
+        .bold-val {
           font-family: Arial, sans-serif;
           font-weight: bold;
         }
       </style>
-      <g class="card-text">
+      <g class="bold-val">
         <!-- Name / ಹೆಸರು -->
         <text x="${startX}" y="246" font-size="19" fill="#000000">${escapeXml(fullName)}</text>
 
@@ -142,7 +141,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     left: 0,
   });
 
-  // 5. Composite photo & text onto template
+  // 5. Composite photo & text onto base template
   return await sharp(baseImageBuffer)
     .composite(compositeLayers)
     .png()
