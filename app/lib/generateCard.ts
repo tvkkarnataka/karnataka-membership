@@ -71,7 +71,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
 
   const font = await getFont();
 
-  // Extract member registration details from Supabase schema
+  // Extract member registration details
   const fullName = getMemberValue(member, ['full_name', 'fullname', 'name', 'member_name', 'Name'], '');
   const dob = getMemberValue(member, ['dob', 'date_of_birth', 'birth_date', 'DOB'], '');
   const gender = getMemberValue(member, ['gender', 'sex', 'Gender'], '');
@@ -102,7 +102,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     console.error('Failed to load background template:', e);
   }
 
-  // 2. Fetch member photo
+  // 2. Fetch photo
   let photoBase64 = '';
   if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
@@ -118,8 +118,8 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     }
   }
 
-  // 3. Shift x coordinate right to 510 to land directly on top of the blank underline
-  const startX = 510;
+  // 3. Set startX = 515 for optimal right padding after the colons
+  const startX = 520;
   const pathFullName = textToPathSvg(font, fullName, startX, 242, 18, '#000000');
   const pathDob = textToPathSvg(font, dob, startX, 279, 17, '#000000');
   const pathGender = textToPathSvg(font, gender, startX, 316, 17, '#000000');
@@ -129,7 +129,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   const pathCoordinator = textToPathSvg(font, coordinator, startX, 464, 17, '#000000');
   const pathPhone = textToPathSvg(font, phone, startX, 501, 18, '#0056B3');
 
-  // 4. Construct SVG
+  // 4. Build output SVG
   const svgString = `
     <svg width="1024" height="654" viewBox="0 0 1024 654" xmlns="http://www.w3.org/2000/svg">
       <!-- Background Template -->
@@ -146,7 +146,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
           : ''
       }
 
-      <!-- Vector Path Text Elements overlaying blank underlines -->
+      <!-- Vector Path Text Overlay -->
       <g>
         ${pathFullName}
         ${pathDob}
@@ -160,7 +160,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     </svg>
   `;
 
-  // 5. Render PNG Buffer
+  // 5. Render PNG
   const { Resvg } = await import('@resvg/resvg-js');
   const resvg = new Resvg(svgString, {
     fitTo: { mode: 'width', value: 1024 },
