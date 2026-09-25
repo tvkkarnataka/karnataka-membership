@@ -1,18 +1,52 @@
 import path from 'path';
 import fs from 'fs';
+import opentype from 'opentype.js';
 
-// Helper to escape special XML characters for SVG text
-function escapeXml(str: string): string {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+let cachedFont: opentype.Font | null = null;
+
+// Helper to fetch and load opentype font once into memory
+async function getFont(): Promise<opentype.Font | null> {
+  if (cachedFont) return cachedFont;
+  try {
+    const fontRes = await fetch(
+      'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-700-normal.ttf'
+    );
+    if (fontRes.ok) {
+      const fontBuffer = await fontRes.arrayBuffer();
+      cachedFont = opentype.parse(fontBuffer);
+      return cachedFont;
+    }
+  } catch (e) {
+    console.error('Failed to load opentype font:', e);
+  }
+  return null;
 }
 
-// Deep field extraction to guarantee values are never blank
+// Convert plain text into raw SVG vector <path> string
+function textToPathSvg(
+  font: opentype.Font | null,
+  text: string,
+  x: number,
+  y: number,
+  fontSize: number,
+  color: string
+): string {
+  if (!text) return '';
+  if (!font) {
+    // Basic SVG fallback if font fetch fails
+    return `<text x="${x}" y="${y}" font-size="${fontSize}" fill="${color}" font-weight="bold">${text}</text>`;
+  }
+
+  try {
+    const path = font.getPath(text, x, y, fontSize);
+    path.fill = color;
+    return path.toSVG(2);
+  } catch (e) {
+    console.error('Error converting text to path:', e);
+    return `<text x="${x}" y="${y}" font-size="${fontSize}" fill="${color}">${text}</text>`;
+  }
+}
+
 function getMemberValue(member: any, keys: string[], fallback: string = ''): string {
   if (!member || typeof member !== 'object') return fallback;
 
@@ -22,7 +56,6 @@ function getMemberValue(member: any, keys: string[], fallback: string = ''): str
     }
   }
 
-  // Case-insensitive search across object keys
   const lowerKeys = keys.map((k) => k.toLowerCase());
   for (const key of Object.keys(member)) {
     if (lowerKeys.includes(key.toLowerCase())) {
@@ -39,18 +72,20 @@ function getMemberValue(member: any, keys: string[], fallback: string = ''): str
 export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   if (!member) member = {};
 
-  // Extract registered values
+  const font = await getFont();
+
+  // Extract values with fallbacks
   const fullName = getMemberValue(member, ['full_name', 'fullname', 'name', 'member_name', 'Name'], 'Member Name');
-  const dob = getMemberValue(member, ['dob', 'date_of_birth', 'birth_date', 'DOB'], 'N/A');
-  const gender = getMemberValue(member, ['gender', 'sex', 'Gender'], 'N/A');
+  const dob = getMemberValue(member, ['dob', 'date_of_birth', 'birth_date', 'DOB'], 'DD/MM/YYYY');
+  const gender = getMemberValue(member, ['gender', 'sex', 'Gender'], 'Male');
   const tempId = getMemberValue(member, ['membership_id', 'temporary_id', 'id', 'member_id', 'ID'], 'TVK-2026-001');
   const district = getMemberValue(member, ['district', 'city', 'location', 'District'], 'Karnataka');
   const teamName = getMemberValue(member, ['team_name', 'team', 'Team'], 'State HQ Team');
-  const coordinator = getMemberValue(member, ['coordinator', 'coordinator_name', 'Coordinator'], 'N/A');
-  const phone = getMemberValue(member, ['phone', 'phone_number', 'mobile', 'Phone'], 'N/A');
+  const coordinator = getMemberValue(member, ['coordinator', 'coordinator_name', 'Coordinator'], 'HQ Team');
+  const phone = getMemberValue(member, ['phone', 'phone_number', 'mobile', 'Phone'], '9876543210');
   const photoUrl = getMemberValue(member, ['photo_url', 'photoUrl', 'photo', 'avatar_url', 'Photo'], '');
 
-  // 1. Read background template from public folder
+  // 1. Read template from public directory
   let backgroundBase64 = '';
   const publicDir = path.join(process.cwd(), 'public');
   try {
@@ -70,7 +105,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     console.error('Failed to load background template:', e);
   }
 
-  // 2. Fetch member photo as Base64 Data URI
+  // 2. Fetch photo as Base64 URI
   let photoBase64 = '';
   if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
@@ -82,25 +117,22 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
         photoBase64 = `data:${type};base64,${buffer.toString('base64')}`;
       }
     } catch (err) {
-      console.error('Failed to fetch photo URL:', err);
+      console.error('Failed to fetch photo:', err);
     }
   }
 
-  // 3. Load or fetch TTF Font Buffer for SVG text rendering
-  let fontBuffer: Buffer | null = null;
-  try {
-    const fontRes = await fetch(
-      'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-700-normal.ttf'
-    );
-    if (fontRes.ok) {
-      const fontArray = await fontRes.arrayBuffer();
-      fontBuffer = Buffer.from(fontArray);
-    }
-  } catch (e) {
-    console.error('Failed to fetch font for resvg:', e);
-  }
+  // 3. Convert all member detail text to pure vector paths
+  const startX = 330;
+  const pathFullName = textToPathSvg(font, fullName, startX, 252, 18, '#000000');
+  const pathDob = textToPathSvg(font, dob, startX, 289, 17, '#000000');
+  const pathGender = textToPathSvg(font, gender, startX, 326, 17, '#000000');
+  const pathTempId = textToPathSvg(font, tempId, startX, 363, 17, '#C00000');
+  const pathDistrict = textToPathSvg(font, district, startX, 400, 17, '#000000');
+  const pathTeamName = textToPathSvg(font, teamName, startX, 437, 17, '#000000');
+  const pathCoordinator = textToPathSvg(font, coordinator, startX, 474, 17, '#000000');
+  const pathPhone = textToPathSvg(font, phone, startX, 511, 18, '#0056B3');
 
-  // 4. Build SVG string with coordinates overlaying the underline space
+  // 4. Build SVG with paths embedded
   const svgString = `
     <svg width="1024" height="654" viewBox="0 0 1024 654" xmlns="http://www.w3.org/2000/svg">
       <!-- Background Template -->
@@ -110,57 +142,33 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
           : `<rect width="1024" height="654" fill="#FFFFFF"/>`
       }
 
-      <!-- Centered Member Photo -->
+      <!-- Member Photo -->
       ${
         photoBase64
           ? `<image x="808" y="242" width="170" height="210" href="${photoBase64}" preserveAspectRatio="xMidYMid slice" clip-path="inset(0px round 6px)"/>`
           : ''
       }
 
-      <!-- Text Overlay directly on template lines -->
-      <g font-family="Roboto" font-weight="bold" fill="#000000">
-        <!-- Name / ಹೆಸರು -->
-        <text x="330" y="252" font-size="18">${escapeXml(fullName)}</text>
-
-        <!-- DOB / ಜನ್ಮ ದಿನಾಂಕ -->
-        <text x="330" y="289" font-size="17">${escapeXml(dob)}</text>
-
-        <!-- Gender / ಲಿಂಗ -->
-        <text x="330" y="326" font-size="17">${escapeXml(gender)}</text>
-
-        <!-- Temporary ID / ತಾತ್ಕಾಲಿಕ ಐಡಿ -->
-        <text x="330" y="363" font-size="17" fill="#C00000">${escapeXml(tempId)}</text>
-
-        <!-- District / ಜಿಲ್ಲೆ -->
-        <text x="330" y="400" font-size="17">${escapeXml(district)}</text>
-
-        <!-- Team Name / ತಂಡದ ಹೆಸರು -->
-        <text x="330" y="437" font-size="17">${escapeXml(teamName)}</text>
-
-        <!-- Coordinator / ಸಂಯೋಜಕ -->
-        <text x="330" y="474" font-size="17">${escapeXml(coordinator)}</text>
-
-        <!-- Contact Number / ಸಂಪರ್ಕ ಸಂಖ್ಯೆ -->
-        <text x="330" y="511" font-size="18" fill="#0056B3">${escapeXml(phone)}</text>
+      <!-- Rendered Vector Path Text Elements -->
+      <g>
+        ${pathFullName}
+        ${pathDob}
+        ${pathGender}
+        ${pathTempId}
+        ${pathDistrict}
+        ${pathTeamName}
+        ${pathCoordinator}
+        ${pathPhone}
       </g>
     </svg>
   `;
 
-  // 5. Render PNG with Resvg
+  // 5. Render PNG Buffer
   const { Resvg } = await import('@resvg/resvg-js');
-
-  const resvgOptions: any = {
+  const resvg = new Resvg(svgString, {
     fitTo: { mode: 'width', value: 1024 },
-  };
+  });
 
-  if (fontBuffer) {
-    resvgOptions.font = {
-      fontBuffers: [fontBuffer],
-      defaultFontFamily: 'Roboto',
-    };
-  }
-
-  const resvg = new Resvg(svgString, resvgOptions);
   const pngData = resvg.render();
   return Buffer.from(pngData.asPng());
 }
