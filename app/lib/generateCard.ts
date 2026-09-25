@@ -3,7 +3,7 @@ import fs from 'fs';
 
 let cachedFontBase64: string | null = null;
 
-// Fetch and convert font buffer to Base64 once
+// Helper to fetch and convert font buffer to Base64 once
 async function getFontBase64(): Promise<string> {
   if (cachedFontBase64) return cachedFontBase64;
   try {
@@ -58,7 +58,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
 
   const fontBase64 = await getFontBase64();
 
-  // Map values directly matching your Supabase row structure
+  // Map values directly matching your Supabase row keys
   const fullName = getMemberValue(member, ['full_name', 'fullname', 'name']);
   const dob = getMemberValue(member, ['dob', 'date_of_birth']);
   const gender = getMemberValue(member, ['gender', 'sex']);
@@ -105,7 +105,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     }
   }
 
-  // 3. Build SVG with font embedded via @font-face Data URI
+  // 3. Construct SVG string with Base64 font embedded directly in @font-face
   const startX = 540;
   const svgString = `
     <svg width="1024" height="654" viewBox="0 0 1024 654" xmlns="http://www.w3.org/2000/svg">
