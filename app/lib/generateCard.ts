@@ -2,28 +2,27 @@ import path from 'path';
 import fs from 'fs';
 
 export async function generateIDCardBuffer(member: any): Promise<Buffer> {
-  // Extract values with fallbacks across common Supabase field names
-  const fullName = member.full_name || member.fullName || member.name || 'Member Name';
+  // Extract values with fallbacks across common database column names
+  const fullName = member.full_name || member.fullName || member.name || 'N/A';
   const dob = member.dob || member.date_of_birth || member.birth_date || 'N/A';
   const gender = member.gender || member.sex || 'N/A';
-  const tempId = member.temp_id || member.temporary_id || member.id || 'TVK-2026-001';
-  const district = member.district || member.city || 'Karnataka';
+  const tempId = member.temp_id || member.temporary_id || member.id || 'N/A';
+  const district = member.district || member.city || 'N/A';
   const teamName = member.team_name || member.team || 'State HQ Team';
   const coordinator = member.coordinator || member.coordinator_name || 'N/A';
   const phone = member.phone || member.phone_number || member.mobile || 'N/A';
   const photoUrl = member.photo_url || member.photoUrl || member.photo || member.avatar_url || '';
 
-  // 1. Read PNG or JPG background template from public folder
+  // 1. Read background template from public folder
   let backgroundBase64 = '';
   try {
     const publicDir = path.join(process.cwd(), 'public');
-    let templatePath = path.join(publicDir, 'id-template.png');
-    let contentType = 'image/png';
+    let templatePath = path.join(publicDir, 'id-template.jpg');
+    let contentType = 'image/jpeg';
 
-    // Fallback to JPG if PNG does not exist
     if (!fs.existsSync(templatePath)) {
-      templatePath = path.join(publicDir, 'id-template.jpg');
-      contentType = 'image/jpeg';
+      templatePath = path.join(publicDir, 'id-template.png');
+      contentType = 'image/png';
     }
 
     if (fs.existsSync(templatePath)) {
@@ -50,48 +49,48 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     }
   }
 
-  // 3. Build SVG overlay
+  // 3. Build SVG overlay with high-contrast text rendering
   const svgString = `
     <svg width="1024" height="654" viewBox="0 0 1024 654" xmlns="http://www.w3.org/2000/svg">
-      <!-- Background PNG Template -->
+      <!-- Background Template -->
       ${
         backgroundBase64
           ? `<image x="0" y="0" width="1024" height="654" href="${backgroundBase64}" preserveAspectRatio="none"/>`
           : `<rect width="1024" height="654" fill="#FFFFFF"/>`
       }
 
-      <!-- Centered Member Photo inside the white box -->
+      <!-- Centered Member Photo -->
       ${
         photoBase64
           ? `<image x="808" y="242" width="170" height="210" href="${photoBase64}" preserveAspectRatio="xMidYMid slice" clip-path="inset(0px round 6px)"/>`
           : ''
       }
 
-      <!-- Text Overlay next to template colons -->
-      <g font-family="Arial, Helvetica, sans-serif" font-weight="bold">
+      <!-- Explicit Text Overlays aligned precisely on line height -->
+      <g font-family="Arial, Helvetica, sans-serif" font-weight="bold" fill="#000000" dominant-baseline="alphabetic">
         <!-- Name / ಹೆಸರು -->
-        <text x="525" y="254" font-size="18" fill="#0B132B">${fullName}</text>
+        <text x="490" y="252" font-size="20">${fullName}</text>
 
         <!-- DOB / ಜನ್ಮ ದಿನಾಂಕ -->
-        <text x="525" y="291" font-size="17" fill="#0B132B">${dob}</text>
+        <text x="490" y="289" font-size="18">${dob}</text>
 
         <!-- Gender / ಲಿಂಗ -->
-        <text x="525" y="328" font-size="17" fill="#0B132B">${gender}</text>
+        <text x="490" y="326" font-size="18">${gender}</text>
 
         <!-- Temporary ID / ತಾತ್ಕಾಲಿಕ ಐಡಿ -->
-        <text x="525" y="365" font-size="17" fill="#C00000">${tempId}</text>
+        <text x="490" y="363" font-size="18" fill="#C00000">${tempId}</text>
 
         <!-- District / ಜಿಲ್ಲೆ -->
-        <text x="525" y="402" font-size="17" fill="#0B132B">${district}</text>
+        <text x="490" y="400" font-size="18">${district}</text>
 
         <!-- Team Name / ತಂಡದ ಹೆಸರು -->
-        <text x="525" y="439" font-size="17" fill="#0B132B">${teamName}</text>
+        <text x="490" y="437" font-size="18">${teamName}</text>
 
         <!-- Coordinator / ಸಂಯೋಜಕ -->
-        <text x="525" y="476" font-size="17" fill="#0B132B">${coordinator}</text>
+        <text x="490" y="474" font-size="18">${coordinator}</text>
 
         <!-- Contact Number / ಸಂಪರ್ಕ ಸಂಖ್ಯೆ -->
-        <text x="525" y="513" font-size="18" fill="#0056B3">${phone}</text>
+        <text x="490" y="511" font-size="20" fill="#0056B3">${phone}</text>
       </g>
     </svg>
   `;
