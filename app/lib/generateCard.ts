@@ -2,16 +2,6 @@ import path from 'path';
 import fs from 'fs';
 import sharp from 'sharp';
 
-function escapeXml(str: string): string {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
-
 function getMemberValue(member: any, keys: string[], fallback: string = ''): string {
   if (!member || typeof member !== 'object') return fallback;
 
@@ -34,12 +24,31 @@ function getMemberValue(member: any, keys: string[], fallback: string = ''): str
   return fallback;
 }
 
+// Create clean text image buffer using Sharp's text engine
+async function createTextImage(
+  text: string,
+  width: number,
+  height: number,
+  fontSize: number,
+  color: string = '#000000'
+): Promise<Buffer> {
+  if (!text) text = ' ';
+
+  const svg = Buffer.from(`
+    <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+      <text x="0" y="${fontSize}" font-family="DejaVu Sans, Liberation Sans, Arial, sans-serif" font-size="${fontSize}" font-weight="bold" fill="${color}">${text}</text>
+    </svg>
+  `);
+
+  return await sharp(svg).png().toBuffer();
+}
+
 export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   if (!member) member = {};
 
   const publicDir = path.join(process.cwd(), 'public');
 
-  // 1. Read template image
+  // 1. Read base template
   let templatePath = path.join(publicDir, 'id-template.png');
   if (!fs.existsSync(templatePath)) {
     templatePath = path.join(publicDir, 'id-template.jpg');
@@ -61,7 +70,6 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
       .toBuffer();
   }
 
-  // Get template dimensions to match canvas dynamically
   const metadata = await sharp(baseImageBuffer).metadata();
   const canvasWidth = metadata.width || 1600;
   const canvasHeight = metadata.height || 1022;
@@ -77,9 +85,9 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   const phone = getMemberValue(member, ['phone', 'mobile']);
   const photoUrl = getMemberValue(member, ['photo_url', 'avatar_url']);
 
-  const compositeLayers: Array<{ input: Buffer; top?: number; left?: number }> = [];
+  const compositeLayers: Array<{ input: Buffer; top: number; left: number }> = [];
 
-  // 3. Process Member Photo (Your verified coordinates: left 1210, top 410, size 260x310)
+  // 3. Process Member Photo (Your exact box coordinates: left 1210, top 410, size 260x310)
   if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
       const imgRes = await fetch(photoUrl);
@@ -98,55 +106,42 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
         });
       }
     } catch (e) {
-      console.error('Failed to fetch user photo:', e);
+      console.error('Failed to fetch photo:', e);
     }
   }
 
-  // 4. SVG Overlay using explicit sans-serif CSS font stack (startX = 820)
+  // 4. Create individual text image buffers to bypass font rendering bugs (startX = 820)
   const startX = 820;
-  const svgTextOverlay = Buffer.from(`
-    <svg width="${canvasWidth}" height="${canvasHeight}" xmlns="http://www.w3.org/2000/svg">
-      <style>
-        .bold-val {
-          font-family: 'DejaVu Sans', 'Liberation Sans', 'Helvetica Neue', Arial, sans-serif;
-          font-weight: 700;
-        }
-      </style>
-      <g class="bold-val">
-        <!-- Name / ಹೆಸರು -->
-        <text x="${startX}" y="385" font-size="28" fill="#000000">${escapeXml(fullName)}</text>
 
-        <!-- DOB / ಜನ್ಮ ದಿನಾಂಕ -->
-        <text x="${startX}" y="443" font-size="26" fill="#000000">${escapeXml(dob)}</text>
+  const fields = [
+    { text: fullName, top: 355, size: 28, color: '#000000' },
+    { text: dob, top: 413, size: 26, color: '#000000' },
+    { text: gender, top: 471, size: 26, color: '#000000' },
+    { text: tempId, top: 529, size: 26, color: '#C00000' },
+    { text: district, top: 587, size: 26, color: '#000000' },
+    { text: teamName, top: 645, size: 24, color: '#000000' },
+    { text: coordinator, top: 703, size: 24, color: '#000000' },
+    { text: phone, top: 761, size: 28, color: '#0056B3' },
+  ];
 
-        <!-- Gender / ಲಿಂಗ -->
-        <text x="${startX}" y="501" font-size="26" fill="#000000">${escapeXml(gender)}</text>
+  for (const field of fields) {
+    if (field.text) {
+      const textImg = await createTextImage(
+        field.text,
+        380,
+        field.size + 15,
+        field.size,
+        field.color
+      );
+      compositeLayers.push({
+        input: textImg,
+        left: startX,
+        top: field.top,
+      });
+    }
+  }
 
-        <!-- Temporary ID / ತಾತ್ಕಾಲಿಕ ಐಡಿ -->
-        <text x="${startX}" y="559" font-size="26" fill="#C00000">${escapeXml(tempId)}</text>
-
-        <!-- District / ಜಿಲ್ಲೆ -->
-        <text x="${startX}" y="617" font-size="26" fill="#000000">${escapeXml(district)}</text>
-
-        <!-- Team Name / ತಂಡದ ಹೆಸರು -->
-        <text x="${startX}" y="675" font-size="24" fill="#000000">${escapeXml(teamName)}</text>
-
-        <!-- Coordinator / ಸಂಯೋಜಕ -->
-        <text x="${startX}" y="733" font-size="24" fill="#000000">${escapeXml(coordinator)}</text>
-
-        <!-- Contact Number / ಸಂಪರ್ಕ ಸಂಖ್ಯೆ -->
-        <text x="${startX}" y="791" font-size="28" fill="#0056B3">${escapeXml(phone)}</text>
-      </g>
-    </svg>
-  `);
-
-  compositeLayers.push({
-    input: svgTextOverlay,
-    top: 0,
-    left: 0,
-  });
-
-  // 5. Composite image & return buffer
+  // 5. Composite photo & text layers onto base template
   return await sharp(baseImageBuffer)
     .composite(compositeLayers)
     .png()
