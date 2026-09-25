@@ -6,10 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "next lint"
   },
   "dependencies": {
-    "@napi-rs/canvas": "^1.0.9",
+    "@resvg/resvg-js": "^2.6.2",
     "@supabase/supabase-js": "^2.112.4",
     "docx": "^9.7.1",
     "file-saver": "^2.0.5",
