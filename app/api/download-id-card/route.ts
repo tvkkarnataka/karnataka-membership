@@ -27,7 +27,7 @@ export async function GET(req: Request) {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Directly query the exact column name in your Supabase table ('phone')
+    // Query the exact column in your schema directly ('phone')
     const { data: member, error } = await supabase
       .from('members')
       .select('*')
@@ -48,7 +48,7 @@ export async function GET(req: Request) {
       );
     }
 
-    // Generate PNG Buffer
+    // Generate ID card PNG buffer
     const imageBuffer = await generateIDCardBuffer(member);
 
     return new NextResponse(new Uint8Array(imageBuffer), {
