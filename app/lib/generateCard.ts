@@ -83,13 +83,13 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
         const rawPhotoBuffer = Buffer.from(photoArrBuffer);
 
         const processedPhoto = await sharp(rawPhotoBuffer)
-          .resize(170, 210, { fit: 'cover' })
+          .resize(200, 250, { fit: 'cover' })
           .toBuffer();
 
         compositeLayers.push({
           input: processedPhoto,
-          left: 808,
-          top: 242,
+          left: 1200,
+          top: 350,
         });
       }
     } catch (e) {
@@ -98,7 +98,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   }
 
   // 4. SVG Overlay -> Target startX: 540 for line alignment
-  const startX = 540;
+  const startX = 850;
   const svgTextOverlay = Buffer.from(`
     <svg width="1024" height="654" xmlns="http://www.w3.org/2000/svg">
       <style>
