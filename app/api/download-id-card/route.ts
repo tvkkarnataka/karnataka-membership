@@ -27,23 +27,12 @@ export async function GET(req: Request) {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Query using Supabase 'or' condition to match 'phone', 'phone_number', or 'mobile'
-    let { data: member, error } = await supabase
+    // Directly query the exact column name in your Supabase table ('phone')
+    const { data: member, error } = await supabase
       .from('members')
       .select('*')
-      .or(`phone.eq.${phone},phone_number.eq.${phone},mobile.eq.${phone}`)
+      .eq('phone', phone)
       .maybeSingle();
-
-    // Fallback: If 'or' fails due to missing column names, query 'phone' directly
-    if (error) {
-      const fallbackRes = await supabase
-        .from('members')
-        .select('*')
-        .eq('phone', phone)
-        .maybeSingle();
-      member = fallbackRes.data;
-      error = fallbackRes.error;
-    }
 
     if (error) {
       return NextResponse.json(
@@ -59,7 +48,7 @@ export async function GET(req: Request) {
       );
     }
 
-    // Generate PNG Buffer using generateIDCardBuffer
+    // Generate PNG Buffer
     const imageBuffer = await generateIDCardBuffer(member);
 
     return new NextResponse(new Uint8Array(imageBuffer), {
