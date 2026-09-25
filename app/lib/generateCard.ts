@@ -89,8 +89,8 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
 
         compositeLayers.push({
           input: processedPhoto,
-          left: 900,
-          top: 300,
+          left: 1300,
+          top: 550,
         });
       }
     } catch (e) {
@@ -99,7 +99,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   }
 
   // 4. Pure SVG Text Overlay for database field values
-  const startX = 650;
+  const startX = 800;
   const svgTextOverlay = Buffer.from(`
     <svg width="1024" height="654" xmlns="http://www.w3.org/2000/svg">
       <style>
