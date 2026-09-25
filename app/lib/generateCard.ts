@@ -39,7 +39,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
 
   const publicDir = path.join(process.cwd(), 'public');
 
-  // 1. Load background template
+  // 1. Read background template
   let templatePath = path.join(publicDir, 'id-template.png');
   if (!fs.existsSync(templatePath)) {
     templatePath = path.join(publicDir, 'id-template.jpg');
@@ -49,7 +49,6 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   if (fs.existsSync(templatePath)) {
     baseImageBuffer = fs.readFileSync(templatePath);
   } else {
-    // White 1024x654 canvas fallback
     baseImageBuffer = await sharp({
       create: {
         width: 1024,
@@ -62,7 +61,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
       .toBuffer();
   }
 
-  // 2. Extract database values
+  // 2. Extract database values matching Supabase raw row keys
   const fullName = getMemberValue(member, ['full_name', 'fullname', 'name']);
   const dob = getMemberValue(member, ['dob', 'date_of_birth']);
   const gender = getMemberValue(member, ['gender', 'sex']);
@@ -73,10 +72,9 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   const phone = getMemberValue(member, ['phone', 'mobile']);
   const photoUrl = getMemberValue(member, ['photo_url', 'avatar_url']);
 
-  // Composite elements layer array typed to avoid namespace lookups
   const compositeLayers: Array<{ input: Buffer; top?: number; left?: number }> = [];
 
-  // 3. Process Member Photo
+  // 3. Process Member Photo & Place Directly Inside Photo Frame (left: 808, top: 242, width: 170, height: 210)
   if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
       const imgRes = await fetch(photoUrl);
@@ -84,7 +82,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
         const photoArrBuffer = await imgRes.arrayBuffer();
         const rawPhotoBuffer = Buffer.from(photoArrBuffer);
 
-        // Crop & Resize member photo to 170x210
+        // Crop & Resize photo to fit inside frame exactly
         const processedPhoto = await sharp(rawPhotoBuffer)
           .resize(170, 210, { fit: 'cover' })
           .toBuffer();
@@ -100,17 +98,17 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     }
   }
 
-  // 4. Create SVG Overlay for Text (startX = 515)
+  // 4. Clean Vector SVG Overlay for Member Text Fields (startX = 515)
   const startX = 540;
   const svgTextOverlay = Buffer.from(`
     <svg width="1024" height="654" xmlns="http://www.w3.org/2000/svg">
       <style>
-        .bold-text {
-          font-family: Arial, Helvetica, sans-serif;
+        .card-text {
+          font-family: Arial, sans-serif;
           font-weight: bold;
         }
       </style>
-      <g class="bold-text">
+      <g class="card-text">
         <!-- Name / ಹೆಸರು -->
         <text x="${startX}" y="246" font-size="19" fill="#000000">${escapeXml(fullName)}</text>
 
@@ -127,10 +125,10 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
         <text x="${startX}" y="394" font-size="18" fill="#000000">${escapeXml(district)}</text>
 
         <!-- Team Name / ತಂಡದ ಹೆಸರು -->
-        <text x="${startX}" y="431" font-size="16" fill="#000000">${escapeXml(teamName)}</text>
+        <text x="${startX}" y="431" font-size="15" fill="#000000">${escapeXml(teamName)}</text>
 
         <!-- Coordinator / ಸಂಯೋಜಕ -->
-        <text x="${startX}" y="468" font-size="16" fill="#000000">${escapeXml(coordinator)}</text>
+        <text x="${startX}" y="468" font-size="15" fill="#000000">${escapeXml(coordinator)}</text>
 
         <!-- Contact Number / ಸಂಪರ್ಕ ಸಂಖ್ಯೆ -->
         <text x="${startX}" y="505" font-size="19" fill="#0056B3">${escapeXml(phone)}</text>
@@ -144,7 +142,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     left: 0,
   });
 
-  // 5. Composite photo & text onto template and produce final PNG
+  // 5. Composite photo & text onto template
   return await sharp(baseImageBuffer)
     .composite(compositeLayers)
     .png()
