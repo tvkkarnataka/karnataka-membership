@@ -2,18 +2,18 @@ import path from 'path';
 import fs from 'fs';
 
 export async function generateIDCardBuffer(member: any): Promise<Buffer> {
-  // Gracefully fallback across common Supabase database column names
-  const fullName = member.full_name || member.fullName || member.name || '';
-  const dob = member.dob || member.date_of_birth || member.birth_date || member.created_at?.split('T')[0] || '';
-  const gender = member.gender || member.sex || '';
-  const tempId = member.temp_id || member.temporary_id || member.id || '';
-  const district = member.district || member.city || '';
+  // Extract values with fallbacks across common Supabase field names
+  const fullName = member.full_name || member.fullName || member.name || 'Member Name';
+  const dob = member.dob || member.date_of_birth || member.birth_date || 'N/A';
+  const gender = member.gender || member.sex || 'N/A';
+  const tempId = member.temp_id || member.temporary_id || member.id || 'TVK-2026-001';
+  const district = member.district || member.city || 'Karnataka';
   const teamName = member.team_name || member.team || 'State HQ Team';
-  const coordinator = member.coordinator || member.coordinator_name || '';
-  const phone = member.phone || member.phone_number || member.mobile || '';
+  const coordinator = member.coordinator || member.coordinator_name || 'N/A';
+  const phone = member.phone || member.phone_number || member.mobile || 'N/A';
   const photoUrl = member.photo_url || member.photoUrl || member.photo || member.avatar_url || '';
 
-  // 1. Read template from public folder
+  // 1. Load background template from public folder
   let backgroundBase64 = '';
   try {
     const publicDir = path.join(process.cwd(), 'public');
@@ -33,7 +33,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     console.error('Failed to load background template:', e);
   }
 
-  // 2. Fetch member photo as base64 data URI
+  // 2. Fetch member photo as base64 URI
   let photoBase64 = '';
   if (photoUrl && photoUrl.startsWith('http')) {
     try {
@@ -49,8 +49,8 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     }
   }
 
-  // 3. Build SVG layer
-  // Photo coordinates tuned to fit strictly within the white 'PHOTO HERE' box frame
+  // 3. Build SVG overlay
+  // Photo coordinates (x=808, y=242, width=170, height=210) center it inside the 'PHOTO HERE' box frame
   const svgString = `
     <svg width="1024" height="654" viewBox="0 0 1024 654" xmlns="http://www.w3.org/2000/svg">
       <!-- Background Template -->
@@ -60,14 +60,14 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
           : `<rect width="1024" height="654" fill="#FFFFFF"/>`
       }
 
-      <!-- Member Photo (Sized & positioned strictly inside the template white box) -->
+      <!-- Centered Member Photo inside the white box -->
       ${
         photoBase64
-          ? `<image x="808" y="243" width="170" height="195" href="${photoBase64}" preserveAspectRatio="xMidYMid slice" clip-path="inset(0px round 8px)"/>`
+          ? `<image x="808" y="242" width="170" height="210" href="${photoBase64}" preserveAspectRatio="xMidYMid slice" clip-path="inset(0px round 6px)"/>`
           : ''
       }
 
-      <!-- Text Field Overlays placed right after the colons -->
+      <!-- Text Overlay next to template colons -->
       <!-- Name / ಹೆಸರು -->
       <text x="525" y="254" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="bold" fill="#0B132B">${fullName}</text>
 
