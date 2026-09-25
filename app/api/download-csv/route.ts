@@ -16,7 +16,6 @@ import {
   AlignmentType,
 } from 'docx';
 
-// Helper function to fetch remote images for embedding
 async function fetchImageBuffer(url: string): Promise<Uint8Array | null> {
   if (!url || !url.startsWith('http')) return null;
   try {
@@ -29,7 +28,6 @@ async function fetchImageBuffer(url: string): Promise<Uint8Array | null> {
   }
 }
 
-// Clean border configuration
 const tableBorders = {
   top: { style: BorderStyle.SINGLE, size: 4, color: 'CCCCCC' },
   bottom: { style: BorderStyle.SINGLE, size: 4, color: 'CCCCCC' },
@@ -39,19 +37,12 @@ const tableBorders = {
   insideVertical: { style: BorderStyle.SINGLE, size: 4, color: 'E0E0E0' },
 };
 
-// Standard padding for clean cell spacing
-const cellMargins = {
-  top: 120,
-  bottom: 120,
-  left: 150,
-  right: 150,
-};
+const cellMargins = { top: 120, bottom: 120, left: 150, right: 150 };
 
-// Helper for header cells with background shading
 function createHeaderCell(text: string, widthPercent: number): TableCell {
   return new TableCell({
     width: { size: widthPercent, type: WidthType.PERCENTAGE },
-    shading: { fill: '0B132B' }, // Dark Navy Header
+    shading: { fill: '0B132B' },
     verticalAlign: VerticalAlign.CENTER,
     margins: cellMargins,
     children: [
@@ -63,7 +54,6 @@ function createHeaderCell(text: string, widthPercent: number): TableCell {
   });
 }
 
-// Helper for body text cells
 function createBodyCell(text: string, widthPercent: number): TableCell {
   return new TableCell({
     width: { size: widthPercent, type: WidthType.PERCENTAGE },
@@ -78,7 +68,6 @@ function createBodyCell(text: string, widthPercent: number): TableCell {
   });
 }
 
-// Helper for clickable hyperlink cells
 function createClickableCell(displayText: string, targetUrl: string, widthPercent: number): TableCell {
   if (!targetUrl || targetUrl === 'N/A' || !targetUrl.startsWith('http')) {
     return createBodyCell('N/A', widthPercent);
@@ -132,12 +121,11 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const origin =
-      req.headers.get('origin') ||
-      process.env.NEXT_PUBLIC_SITE_URL ||
-      'https://tvkkarnatakahq.netlify.app';
+    // Automatically detect host header or default to Vercel domain
+    const host = req.headers.get('host') || 'karnataka-membership.vercel.app';
+    const protocol = host.includes('localhost') ? 'http' : 'https';
+    const baseUrl = `${protocol}://${host}`;
 
-    // Header row with explicit column width percentages (totaling 100%)
     const headerRow = new TableRow({
       cantSplit: true,
       children: [
@@ -151,16 +139,26 @@ export async function GET(req: Request) {
       ],
     });
 
-    // Build data rows
     const dataRows = await Promise.all(
       (members || []).map(async (m) => {
-        const phone = m.phone_number || m.phone || '';
-        const photoUrl = m.photo_url || m.photoUrl || m.photo || '';
-        const aadhaarUrl = m.aadhaar_url || m.aadhaar_link || m.aadhaar || '';
-        const panUrl = m.pan_url || m.pan_link || m.pan || '';
+        const phone = m.phone || m.phone_number || m.mobile || '';
+        const photoUrl = m.photo_url || m.photoUrl || m.photo || m.avatar_url || '';
+        
+        // Checks all common database field naming variations for document record links
+        const aadhaarUrl =
+          m.aadhaar_url ||
+          m.aadhaarUrl ||
+          m.aadhaar_link ||
+          m.aadhaar ||
+          m.aadhar_url ||
+          m.aadhar ||
+          '';
 
+        const panUrl = m.pan_url || m.panUrl || m.pan_link || m.pan || '';
+
+        // Point link directly to the current server deployment domain
         const idCardUrl = phone
-          ? `${origin}/api/download-id-card?phone=${phone}&secret=Tvk_ka_hq_2026`
+          ? `${baseUrl}/api/download-id-card?phone=${phone}&secret=Tvk_ka_hq_2026`
           : '';
 
         let photoElement: Paragraph;
@@ -195,7 +193,7 @@ export async function GET(req: Request) {
           cantSplit: true,
           children: [
             photoCell,
-            createBodyCell(m.full_name || m.fullName || 'N/A', 22),
+            createBodyCell(m.full_name || m.fullName || m.name || 'N/A', 22),
             createBodyCell(phone || 'N/A', 16),
             createBodyCell(m.district || 'N/A', 16),
             createClickableCell('View ID Card', idCardUrl, 12),
