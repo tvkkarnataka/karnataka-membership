@@ -13,16 +13,17 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   const phone = member.phone || member.phone_number || member.mobile || 'N/A';
   const photoUrl = member.photo_url || member.photoUrl || member.photo || member.avatar_url || '';
 
-  // 1. Load background template from public folder
+  // 1. Read PNG or JPG background template from public folder
   let backgroundBase64 = '';
   try {
     const publicDir = path.join(process.cwd(), 'public');
-    let templatePath = path.join(publicDir, 'id-template.jpg');
-    let contentType = 'image/jpeg';
+    let templatePath = path.join(publicDir, 'id-template.png');
+    let contentType = 'image/png';
 
+    // Fallback to JPG if PNG does not exist
     if (!fs.existsSync(templatePath)) {
-      templatePath = path.join(publicDir, 'id-template.png');
-      contentType = 'image/png';
+      templatePath = path.join(publicDir, 'id-template.jpg');
+      contentType = 'image/jpeg';
     }
 
     if (fs.existsSync(templatePath)) {
@@ -50,10 +51,9 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   }
 
   // 3. Build SVG overlay
-  // Photo coordinates (x=808, y=242, width=170, height=210) center it inside the 'PHOTO HERE' box frame
   const svgString = `
     <svg width="1024" height="654" viewBox="0 0 1024 654" xmlns="http://www.w3.org/2000/svg">
-      <!-- Background Template -->
+      <!-- Background PNG Template -->
       ${
         backgroundBase64
           ? `<image x="0" y="0" width="1024" height="654" href="${backgroundBase64}" preserveAspectRatio="none"/>`
@@ -68,29 +68,31 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
       }
 
       <!-- Text Overlay next to template colons -->
-      <!-- Name / ಹೆಸರು -->
-      <text x="525" y="254" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="bold" fill="#0B132B">${fullName}</text>
+      <g font-family="Arial, Helvetica, sans-serif" font-weight="bold">
+        <!-- Name / ಹೆಸರು -->
+        <text x="525" y="254" font-size="18" fill="#0B132B">${fullName}</text>
 
-      <!-- DOB / ಜನ್ಮ ದಿನಾಂಕ -->
-      <text x="525" y="291" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="bold" fill="#0B132B">${dob}</text>
+        <!-- DOB / ಜನ್ಮ ದಿನಾಂಕ -->
+        <text x="525" y="291" font-size="17" fill="#0B132B">${dob}</text>
 
-      <!-- Gender / ಲಿಂಗ -->
-      <text x="525" y="328" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="bold" fill="#0B132B">${gender}</text>
+        <!-- Gender / ಲಿಂಗ -->
+        <text x="525" y="328" font-size="17" fill="#0B132B">${gender}</text>
 
-      <!-- Temporary ID / ತಾತ್ಕಾಲಿಕ ಐಡಿ -->
-      <text x="525" y="365" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="bold" fill="#C00000">${tempId}</text>
+        <!-- Temporary ID / ತಾತ್ಕಾಲಿಕ ಐಡಿ -->
+        <text x="525" y="365" font-size="17" fill="#C00000">${tempId}</text>
 
-      <!-- District / ಜಿಲ್ಲೆ -->
-      <text x="525" y="402" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="bold" fill="#0B132B">${district}</text>
+        <!-- District / ಜಿಲ್ಲೆ -->
+        <text x="525" y="402" font-size="17" fill="#0B132B">${district}</text>
 
-      <!-- Team Name / ತಂಡದ ಹೆಸರು -->
-      <text x="525" y="439" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="bold" fill="#0B132B">${teamName}</text>
+        <!-- Team Name / ತಂಡದ ಹೆಸರು -->
+        <text x="525" y="439" font-size="17" fill="#0B132B">${teamName}</text>
 
-      <!-- Coordinator / ಸಂಯೋಜಕ -->
-      <text x="525" y="476" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="bold" fill="#0B132B">${coordinator}</text>
+        <!-- Coordinator / ಸಂಯೋಜಕ -->
+        <text x="525" y="476" font-size="17" fill="#0B132B">${coordinator}</text>
 
-      <!-- Contact Number / ಸಂಪರ್ಕ ಸಂಖ್ಯೆ -->
-      <text x="525" y="513" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="bold" fill="#0056B3">${phone}</text>
+        <!-- Contact Number / ಸಂಪರ್ಕ ಸಂಖ್ಯೆ -->
+        <text x="525" y="513" font-size="18" fill="#0056B3">${phone}</text>
+      </g>
     </svg>
   `;
 
