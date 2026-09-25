@@ -119,7 +119,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   }
 
   // 3. Set startX = 515 for optimal right padding after the colons
-  const startX = 520;
+  const startX = 540;
   const pathFullName = textToPathSvg(font, fullName, startX, 242, 18, '#000000');
   const pathDob = textToPathSvg(font, dob, startX, 279, 17, '#000000');
   const pathGender = textToPathSvg(font, gender, startX, 316, 17, '#000000');
