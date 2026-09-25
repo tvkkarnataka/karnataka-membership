@@ -8,6 +8,7 @@ import {
   AlertCircle, 
   Upload 
 } from 'lucide-react';
+import imageCompression from 'browser-image-compression';
 
 // Dynamic helper function to safely load Supabase client on demand
 const getSupabaseClient = (): SupabaseClient => {
@@ -79,15 +80,46 @@ export default function MembershipDrive() {
     setErrorMessage('');
   };
 
+  // Helper function to compress images before upload
+  const compressFileIfNeeded = async (file: File): Promise<File> => {
+    if (!file.type.startsWith('image/')) {
+      return file; // If PDF or non-image, skip compression
+    }
+
+    if (file.size <= 1024 * 1024) {
+      return file; // Return as-is if already under 1MB
+    }
+
+    const options = {
+      maxSizeMB: 1,
+      maxWidthOrHeight: 1920,
+      useWebWorker: true,
+    };
+
+    try {
+      const compressedBlob = await imageCompression(file, options);
+      return new File([compressedBlob], file.name, {
+        type: file.type,
+        lastModified: Date.now(),
+      });
+    } catch (error) {
+      console.error('Image compression error, proceeding with original:', error);
+      return file;
+    }
+  };
+
   const uploadFileDirect = async (file: File, folder: string, phoneNum: string): Promise<string> => {
     const supabase = getSupabaseClient();
 
-    const fileExt = file.name.split('.').pop() || 'jpg';
+    // Compress image client-side before uploading
+    const fileToUpload = await compressFileIfNeeded(file);
+
+    const fileExt = fileToUpload.name.split('.').pop() || 'jpg';
     const cleanFileName = `${folder}/${phoneNum}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}.${fileExt}`;
 
     const { error: uploadError } = await supabase.storage
       .from('member-documents')
-      .upload(cleanFileName, file, {
+      .upload(cleanFileName, fileToUpload, {
         cacheControl: '3600',
         upsert: true,
       });
@@ -131,7 +163,7 @@ export default function MembershipDrive() {
     setLoading(true);
 
     try {
-      // 1. Upload files directly to Supabase Storage
+      // 1. Upload files directly to Supabase Storage with automatic compression
       const [photoUrl, aadharUrl, panUrl] = await Promise.all([
         uploadFileDirect(photoFile, 'photos', sanitizedPhone),
         uploadFileDirect(aadharFile, 'aadhar', sanitizedPhone),
@@ -414,7 +446,7 @@ export default function MembershipDrive() {
               disabled={loading} 
               className="w-full bg-[#FF0000] hover:bg-[#d90000] text-white font-black py-3.5 rounded-xl transition duration-200 mt-2 shadow-md hover:shadow-lg tracking-wide uppercase disabled:bg-slate-400 cursor-pointer"
             >
-              {loading ? 'Uploading & Registering...' : 'Register Member (ನೋಂದಾಯಿಸಿ)'}
+              {loading ? 'Compressing & Registering...' : 'Register Member (ನೋಂದಾಯಿಸಿ)'}
             </button>
           </form>
         ) : (

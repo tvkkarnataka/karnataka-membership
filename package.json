@@ -10,6 +10,7 @@
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",
     "@supabase/supabase-js": "^2.112.4",
+    "browser-image-compression": "^2.0.2",
     "docx": "^9.7.1",
     "file-saver": "^2.0.5",
     "html2canvas": "^1.4.1",
