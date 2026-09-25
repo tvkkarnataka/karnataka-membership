@@ -1,5 +1,7 @@
 import path from 'path';
 import fs from 'fs';
+import satori from 'satori';
+import { Resvg } from '@resvg/resvg-js';
 
 function escapeXml(str: string): string {
   if (!str) return '';
@@ -36,36 +38,24 @@ function getMemberValue(member: any, keys: string[], fallback: string = ''): str
 export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   if (!member) member = {};
 
-  // Extract member details from database row
-  const fullName = getMemberValue(member, ['full_name', 'fullname', 'name']);
-  const dob = getMemberValue(member, ['dob', 'date_of_birth']);
-  const gender = getMemberValue(member, ['gender', 'sex']);
-  const tempId = getMemberValue(member, ['membership_id', 'temp_id', 'id']);
-  const district = getMemberValue(member, ['district', 'city']);
-  const teamName = getMemberValue(member, ['team_name', 'team'], 'Akila Karnataka Maanila Thalamai TVK');
-  const coordinator = getMemberValue(member, ['coordinator', 'coordinator_name']);
-  const phone = getMemberValue(member, ['phone', 'mobile']);
-  const photoUrl = getMemberValue(member, ['photo_url', 'avatar_url']);
-
   const publicDir = path.join(process.cwd(), 'public');
 
-  // 1. Read local font file from public folder
-  let fontBuffer: Buffer | null = null;
+  // 1. Fetch font buffer
+  let fontData: ArrayBuffer | null = null;
   const localFontPath = path.join(publicDir, 'Roboto-Bold.ttf');
   if (fs.existsSync(localFontPath)) {
-    fontBuffer = fs.readFileSync(localFontPath);
+    const fontBuf = fs.readFileSync(localFontPath);
+    fontData = fontBuf.buffer.slice(fontBuf.byteOffset, fontBuf.byteOffset + fontBuf.byteLength);
   } else {
-    // Online fallback if local file is missing
     try {
       const fontRes = await fetch(
         'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-700-normal.ttf'
       );
       if (fontRes.ok) {
-        const fontArray = await fontRes.arrayBuffer();
-        fontBuffer = Buffer.from(fontArray);
+        fontData = await fontRes.arrayBuffer();
       }
     } catch (e) {
-      console.error('Failed to fetch fallback font:', e);
+      console.error('Failed to fetch font:', e);
     }
   }
 
@@ -88,7 +78,18 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     console.error('Failed to load background template:', e);
   }
 
-  // 3. Fetch member photo as Base64 URI
+  // 3. Extract member fields from Supabase row
+  const fullName = getMemberValue(member, ['full_name', 'fullname', 'name']);
+  const dob = getMemberValue(member, ['dob', 'date_of_birth']);
+  const gender = getMemberValue(member, ['gender', 'sex']);
+  const tempId = getMemberValue(member, ['membership_id', 'temp_id', 'id']);
+  const district = getMemberValue(member, ['district', 'city']);
+  const teamName = getMemberValue(member, ['team_name', 'team'], 'Akila Karnataka Maanila Thalamai TVK');
+  const coordinator = getMemberValue(member, ['coordinator', 'coordinator_name']);
+  const phone = getMemberValue(member, ['phone', 'mobile']);
+  const photoUrl = getMemberValue(member, ['photo_url', 'avatar_url']);
+
+  // 4. Fetch photo as Base64 Data URI
   let photoBase64 = '';
   if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
@@ -104,68 +105,191 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     }
   }
 
-  // 4. Build SVG string
+  // 5. Generate vector SVG using Satori
   const startX = 540;
-  const svgString = `
-    <svg width="1024" height="654" viewBox="0 0 1024 654" xmlns="http://www.w3.org/2000/svg">
-      <!-- Background Template -->
-      ${
-        backgroundBase64
-          ? `<image x="0" y="0" width="1024" height="654" href="${backgroundBase64}" preserveAspectRatio="none"/>`
-          : `<rect width="1024" height="654" fill="#FFFFFF"/>`
-      }
+  const svg = await satori(
+    {
+      type: 'div',
+      props: {
+        style: {
+          width: '1024px',
+          height: '654px',
+          display: 'flex',
+          position: 'relative',
+          backgroundImage: backgroundBase64 ? `url(${backgroundBase64})` : 'none',
+          backgroundSize: '100% 100%',
+        },
+        children: [
+          // Member Photo
+          photoBase64
+            ? {
+                type: 'img',
+                props: {
+                  src: photoBase64,
+                  style: {
+                    position: 'absolute',
+                    left: '808px',
+                    top: '242px',
+                    width: '170px',
+                    height: '210px',
+                    borderRadius: '6px',
+                    objectFit: 'cover',
+                  },
+                },
+              }
+            : null,
 
-      <!-- Member Photo -->
-      ${
-        photoBase64
-          ? `<image x="808" y="242" width="170" height="210" href="${photoBase64}" preserveAspectRatio="xMidYMid slice" clip-path="inset(0px round 6px)"/>`
-          : ''
-      }
+          // Name / ಹೆಸರು
+          {
+            type: 'div',
+            props: {
+              style: {
+                position: 'absolute',
+                left: `${startX}px`,
+                top: '232px',
+                fontSize: '18px',
+                fontWeight: 'bold',
+                color: '#000000',
+              },
+              children: fullName,
+            },
+          },
 
-      <!-- Clean SVG Text Overlay -->
-      <g font-family="Roboto" font-weight="bold">
-        <!-- Name / ಹೆಸರು -->
-        <text x="${startX}" y="246" font-size="18" fill="#000000">${escapeXml(fullName)}</text>
+          // DOB / ಜನ್ಮ ದಿನಾಂಕ
+          {
+            type: 'div',
+            props: {
+              style: {
+                position: 'absolute',
+                left: `${startX}px`,
+                top: '269px',
+                fontSize: '17px',
+                fontWeight: 'bold',
+                color: '#000000',
+              },
+              children: dob,
+            },
+          },
 
-        <!-- DOB / ಜನ್ಮ ದಿನಾಂಕ -->
-        <text x="${startX}" y="283" font-size="17" fill="#000000">${escapeXml(dob)}</text>
+          // Gender / ಲಿಂಗ
+          {
+            type: 'div',
+            props: {
+              style: {
+                position: 'absolute',
+                left: `${startX}px`,
+                top: '306px',
+                fontSize: '17px',
+                fontWeight: 'bold',
+                color: '#000000',
+              },
+              children: gender,
+            },
+          },
 
-        <!-- Gender / ಲಿಂಗ -->
-        <text x="${startX}" y="320" font-size="17" fill="#000000">${escapeXml(gender)}</text>
+          // Temporary ID / ತಾತ್ಕಾಲಿಕ ಐಡಿ
+          {
+            type: 'div',
+            props: {
+              style: {
+                position: 'absolute',
+                left: `${startX}px`,
+                top: '343px',
+                fontSize: '17px',
+                fontWeight: 'bold',
+                color: '#C00000',
+              },
+              children: tempId,
+            },
+          },
 
-        <!-- Temporary ID / ತಾತ್ಕಾಲಿಕ ಐಡಿ -->
-        <text x="${startX}" y="357" font-size="17" fill="#C00000">${escapeXml(tempId)}</text>
+          // District / ಜಿಲ್ಲೆ
+          {
+            type: 'div',
+            props: {
+              style: {
+                position: 'absolute',
+                left: `${startX}px`,
+                top: '380px',
+                fontSize: '17px',
+                fontWeight: 'bold',
+                color: '#000000',
+              },
+              children: district,
+            },
+          },
 
-        <!-- District / ಜಿಲ್ಲೆ -->
-        <text x="${startX}" y="394" font-size="17" fill="#000000">${escapeXml(district)}</text>
+          // Team Name / ತಂಡದ ಹೆಸರು
+          {
+            type: 'div',
+            props: {
+              style: {
+                position: 'absolute',
+                left: `${startX}px`,
+                top: '417px',
+                fontSize: '15px',
+                fontWeight: 'bold',
+                color: '#000000',
+              },
+              children: teamName,
+            },
+          },
 
-        <!-- Team Name / ತಂಡದ ಹೆಸರು -->
-        <text x="${startX}" y="431" font-size="15" fill="#000000">${escapeXml(teamName)}</text>
+          // Coordinator / ಸಂಯೋಜಕ
+          {
+            type: 'div',
+            props: {
+              style: {
+                position: 'absolute',
+                left: `${startX}px`,
+                top: '454px',
+                fontSize: '15px',
+                fontWeight: 'bold',
+                color: '#000000',
+              },
+              children: coordinator,
+            },
+          },
 
-        <!-- Coordinator / ಸಂಯೋಜಕ -->
-        <text x="${startX}" y="468" font-size="15" fill="#000000">${escapeXml(coordinator)}</text>
+          // Contact Number / ಸಂಪರ್ಕ ಸಂಖ್ಯೆ
+          {
+            type: 'div',
+            props: {
+              style: {
+                position: 'absolute',
+                left: `${startX}px`,
+                top: '491px',
+                fontSize: '18px',
+                fontWeight: 'bold',
+                color: '#0056B3',
+              },
+              children: phone,
+            },
+          },
+        ].filter(Boolean),
+      },
+    } as any,
+    {
+      width: 1024,
+      height: 654,
+      fonts: fontData
+        ? [
+            {
+              name: 'Roboto',
+              data: fontData,
+              weight: 700,
+              style: 'normal',
+            },
+          ]
+        : [],
+    }
+  );
 
-        <!-- Contact Number / ಸಂಪರ್ಕ ಸಂಖ್ಯೆ -->
-        <text x="${startX}" y="505" font-size="18" fill="#0056B3">${escapeXml(phone)}</text>
-      </g>
-    </svg>
-  `;
-
-  // 5. Render PNG with Resvg using loaded local font buffer
-  const { Resvg } = await import('@resvg/resvg-js');
-  
-  const resvgOptions: any = {
+  // 6. Convert vector SVG to PNG
+  const resvg = new Resvg(svg, {
     fitTo: { mode: 'width', value: 1024 },
-  };
+  });
 
-  if (fontBuffer) {
-    resvgOptions.font = {
-      fontBuffers: [fontBuffer],
-      defaultFontFamily: 'Roboto',
-    };
-  }
-
-  const resvg = new Resvg(svgString, resvgOptions);
   const pngData = resvg.render();
   return Buffer.from(pngData.asPng());
 }
