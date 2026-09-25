@@ -38,6 +38,7 @@ export default function AdminIdCardDownload() {
         body: JSON.stringify({ phone: sanitizedPhone }),
       });
 
+      // Parse and display the exact detailed error message returned from the API route
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || `Download failed with status ${res.status}`);
@@ -45,7 +46,7 @@ export default function AdminIdCardDownload() {
 
       const blob = await res.blob();
       const downloadUrl = window.URL.createObjectURL(blob);
-      
+
       const anchor = document.createElement('a');
       anchor.href = downloadUrl;
       anchor.download = `TVK_ID_Card_${sanitizedPhone}.png`;

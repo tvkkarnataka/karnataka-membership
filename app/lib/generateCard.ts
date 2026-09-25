@@ -1,6 +1,12 @@
 import path from 'path';
 import fs from 'fs';
-import { Resvg } from '@resvg/resvg-js';
+
+// Helper to dynamically load @resvg/resvg-js and bypass Turbopack static tracing
+function getResvg() {
+  // eslint-disable-next-line no-eval
+  const { Resvg } = eval('require')('@resvg/resvg-js');
+  return Resvg;
+}
 
 export interface MemberData {
   fullName?: string;
@@ -72,6 +78,7 @@ export async function generateIDCardBuffer(member: MemberData): Promise<Buffer> 
     </svg>
   `;
 
+  const Resvg = getResvg();
   const resvg = new Resvg(svgContent, {
     fitTo: { mode: 'width', value: 1024 },
   });
