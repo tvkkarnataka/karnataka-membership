@@ -5,11 +5,10 @@ import * as opentype from 'opentype.js';
 
 let cachedFont: opentype.Font | null = null;
 
-// Fetch and cache the TTF font instance
 async function getFont(): Promise<opentype.Font | null> {
   if (cachedFont) return cachedFont;
   const fontPath = path.join(process.cwd(), 'public', 'Roboto-Bold.ttf');
-  
+
   if (fs.existsSync(fontPath)) {
     const fontBuf = fs.readFileSync(fontPath);
     const arrayBuf = fontBuf.buffer.slice(fontBuf.byteOffset, fontBuf.byteOffset + fontBuf.byteLength);
@@ -27,34 +26,45 @@ async function getFont(): Promise<opentype.Font | null> {
       return cachedFont;
     }
   } catch (e) {
-    console.error('Failed to load font for path generation:', e);
+    console.error('Failed to load TTF font:', e);
   }
   return null;
 }
 
-// Convert plain text into SVG vector path elements
-function textToPathSvg(
+// Safely convert string glyph by glyph into SVG vector paths
+function safeTextToPath(
   font: opentype.Font | null,
   text: string,
-  x: number,
+  startX: number,
   y: number,
   fontSize: number,
   color: string
 ): string {
-  if (!text) return '';
-  if (!font) {
-    return `<text x="${x}" y="${y}" font-size="${fontSize}" fill="${color}">${text}</text>`;
+  if (!text || !font) return '';
+
+  let currentX = startX;
+  let svgPaths = '';
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (char === ' ') {
+      currentX += fontSize * 0.35;
+      continue;
+    }
+
+    try {
+      const glyph = font.charToGlyph(char);
+      const pathObj = glyph.getPath(currentX, y, fontSize);
+      pathObj.fill = color;
+      svgPaths += pathObj.toSVG(2);
+      currentX += (glyph.advanceWidth || 1000) * (fontSize / font.unitsPerEm);
+    } catch (e) {
+      console.error(`Error generating path for char '${char}':`, e);
+      currentX += fontSize * 0.5;
+    }
   }
 
-  try {
-    // Setting features: {} bypasses lookup type 62 opentype substitution errors
-    const pathObj = font.getPath(text, x, y, fontSize, { features: {} });
-    pathObj.fill = color;
-    return pathObj.toSVG(2);
-  } catch (e) {
-    console.error(`Error converting text "${text}" to path:`, e);
-    return `<text x="${x}" y="${y}" font-size="${fontSize}" fill="${color}">${text}</text>`;
-  }
+  return svgPaths;
 }
 
 function getMemberValue(member: any, keys: string[], fallback: string = ''): string {
@@ -85,7 +95,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   const font = await getFont();
   const publicDir = path.join(process.cwd(), 'public');
 
-  // 1. Read base template image
+  // 1. Read template image
   let templatePath = path.join(publicDir, 'id-template.png');
   if (!fs.existsSync(templatePath)) {
     templatePath = path.join(publicDir, 'id-template.jpg');
@@ -111,7 +121,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   const canvasWidth = metadata.width || 1600;
   const canvasHeight = metadata.height || 1022;
 
-  // 2. Extract member fields from database row
+  // 2. Extract database fields
   const fullName = getMemberValue(member, ['full_name', 'fullname', 'name']);
   const dob = getMemberValue(member, ['dob', 'date_of_birth']);
   const gender = getMemberValue(member, ['gender', 'sex']);
@@ -124,7 +134,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
 
   const compositeLayers: Array<{ input: Buffer; top?: number; left?: number }> = [];
 
-  // 3. Process Member Photo (Exact coordinates: left 1210, top 410, size 260x310)
+  // 3. Member photo (left: 1210, top: 410, size: 260x310)
   if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
       const imgRes = await fetch(photoUrl);
@@ -147,16 +157,17 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     }
   }
 
-  // 4. Generate SVG Vector Paths for all fields (startX = 820)
+  // 4. Generate glyph paths for all fields (startX = 820)
   const startX = 820;
-  const pathFullName = textToPathSvg(font, fullName, startX, 385, 28, '#000000');
-  const pathDob = textToPathSvg(font, dob, startX, 443, 26, '#000000');
-  const pathGender = textToPathSvg(font, gender, startX, 501, 26, '#000000');
-  const pathTempId = textToPathSvg(font, tempId, startX, 559, 26, '#C00000');
-  const pathDistrict = textToPathSvg(font, district, startX, 617, 26, '#000000');
-  const pathTeamName = textToPathSvg(font, teamName, startX, 675, 24, '#000000');
-  const pathCoordinator = textToPathSvg(font, coordinator, startX, 733, 24, '#000000');
-  const pathPhone = textToPathSvg(font, phone, startX, 791, 28, '#0056B3');
+
+  const pathFullName = safeTextToPath(font, fullName, startX, 385, 28, '#000000');
+  const pathDob = safeTextToPath(font, dob, startX, 443, 26, '#000000');
+  const pathGender = safeTextToPath(font, gender, startX, 501, 26, '#000000');
+  const pathTempId = safeTextToPath(font, tempId, startX, 559, 26, '#C00000');
+  const pathDistrict = safeTextToPath(font, district, startX, 617, 26, '#000000');
+  const pathTeamName = safeTextToPath(font, teamName, startX, 675, 24, '#000000');
+  const pathCoordinator = safeTextToPath(font, coordinator, startX, 733, 24, '#000000');
+  const pathPhone = safeTextToPath(font, phone, startX, 791, 28, '#0056B3');
 
   const svgVectorOverlay = Buffer.from(`
     <svg width="${canvasWidth}" height="${canvasHeight}" xmlns="http://www.w3.org/2000/svg">
