@@ -51,8 +51,8 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   } else {
     baseImageBuffer = await sharp({
       create: {
-        width: 1024,
-        height: 654,
+        width: 1600,
+        height: 1022,
         channels: 4,
         background: { r: 255, g: 255, b: 255, alpha: 1 },
       },
@@ -60,6 +60,11 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
       .png()
       .toBuffer();
   }
+
+  // Get template dimensions to match canvas dynamically
+  const metadata = await sharp(baseImageBuffer).metadata();
+  const canvasWidth = metadata.width || 1600;
+  const canvasHeight = metadata.height || 1022;
 
   // 2. Extract database values
   const fullName = getMemberValue(member, ['full_name', 'fullname', 'name']);
@@ -74,7 +79,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
 
   const compositeLayers: Array<{ input: Buffer; top?: number; left?: number }> = [];
 
-  // 3. Member Photo -> Target exact box frame at left: 808, top: 242
+  // 3. Process Member Photo (Your verified coordinates: left 1210, top 410, size 260x310)
   if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
       const imgRes = await fetch(photoUrl);
@@ -93,44 +98,44 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
         });
       }
     } catch (e) {
-      console.error('Failed to fetch photo:', e);
+      console.error('Failed to fetch user photo:', e);
     }
   }
 
-  // 4. SVG Overlay -> Target startX: 540 for line alignment
+  // 4. SVG Overlay using explicit sans-serif CSS font stack (startX = 820)
   const startX = 820;
   const svgTextOverlay = Buffer.from(`
-    <svg width="1024" height="654" xmlns="http://www.w3.org/2000/svg">
+    <svg width="${canvasWidth}" height="${canvasHeight}" xmlns="http://www.w3.org/2000/svg">
       <style>
         .bold-val {
-          font-family: Arial, sans-serif;
-          font-weight: bold;
+          font-family: 'DejaVu Sans', 'Liberation Sans', 'Helvetica Neue', Arial, sans-serif;
+          font-weight: 700;
         }
       </style>
       <g class="bold-val">
         <!-- Name / ಹೆಸರು -->
-        <text x="${startX}" y="246" font-size="19" fill="#000000">${escapeXml(fullName)}</text>
+        <text x="${startX}" y="385" font-size="28" fill="#000000">${escapeXml(fullName)}</text>
 
         <!-- DOB / ಜನ್ಮ ದಿನಾಂಕ -->
-        <text x="${startX}" y="283" font-size="18" fill="#000000">${escapeXml(dob)}</text>
+        <text x="${startX}" y="443" font-size="26" fill="#000000">${escapeXml(dob)}</text>
 
         <!-- Gender / ಲಿಂಗ -->
-        <text x="${startX}" y="320" font-size="18" fill="#000000">${escapeXml(gender)}</text>
+        <text x="${startX}" y="501" font-size="26" fill="#000000">${escapeXml(gender)}</text>
 
         <!-- Temporary ID / ತಾತ್ಕಾಲಿಕ ಐಡಿ -->
-        <text x="${startX}" y="357" font-size="18" fill="#C00000">${escapeXml(tempId)}</text>
+        <text x="${startX}" y="559" font-size="26" fill="#C00000">${escapeXml(tempId)}</text>
 
         <!-- District / ಜಿಲ್ಲೆ -->
-        <text x="${startX}" y="394" font-size="18" fill="#000000">${escapeXml(district)}</text>
+        <text x="${startX}" y="617" font-size="26" fill="#000000">${escapeXml(district)}</text>
 
         <!-- Team Name / ತಂಡದ ಹೆಸರು -->
-        <text x="${startX}" y="431" font-size="15" fill="#000000">${escapeXml(teamName)}</text>
+        <text x="${startX}" y="675" font-size="24" fill="#000000">${escapeXml(teamName)}</text>
 
         <!-- Coordinator / ಸಂಯೋಜಕ -->
-        <text x="${startX}" y="468" font-size="15" fill="#000000">${escapeXml(coordinator)}</text>
+        <text x="${startX}" y="733" font-size="24" fill="#000000">${escapeXml(coordinator)}</text>
 
         <!-- Contact Number / ಸಂಪರ್ಕ ಸಂಖ್ಯೆ -->
-        <text x="${startX}" y="505" font-size="19" fill="#0056B3">${escapeXml(phone)}</text>
+        <text x="${startX}" y="791" font-size="28" fill="#0056B3">${escapeXml(phone)}</text>
       </g>
     </svg>
   `);
@@ -141,7 +146,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     left: 0,
   });
 
-  // 5. Output composite
+  // 5. Composite image & return buffer
   return await sharp(baseImageBuffer)
     .composite(compositeLayers)
     .png()
