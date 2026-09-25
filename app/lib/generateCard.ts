@@ -164,10 +164,10 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   const pathDob = safeTextToPath(font, dob, startX, 455, 26, '#000000');
   const pathGender = safeTextToPath(font, gender, startX, 505, 26, '#000000');
   const pathTempId = safeTextToPath(font, tempId, startX, 553, 26, '#C00000');
-  const pathDistrict = safeTextToPath(font, district, startX, 605, 26, '#000000');
-  const pathTeamName = safeTextToPath(font, teamName, startX, 665, 24, '#000000');
-  const pathCoordinator = safeTextToPath(font, coordinator, startX, 710, 24, '#000000');
-  const pathPhone = safeTextToPath(font, phone, startX, 768, 28, '#000000');
+  const pathDistrict = safeTextToPath(font, district, startX, 600, 26, '#000000');
+  const pathTeamName = safeTextToPath(font, teamName, startX, 653, 24, '#000000');
+  const pathCoordinator = safeTextToPath(font, coordinator, startX, 703, 24, '#000000');
+  const pathPhone = safeTextToPath(font, phone, startX, 752, 28, '#000000');
 
   const svgVectorOverlay = Buffer.from(`
     <svg width="${canvasWidth}" height="${canvasHeight}" xmlns="http://www.w3.org/2000/svg">
