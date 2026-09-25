@@ -44,21 +44,35 @@ function textToPathSvg(
   }
 }
 
+// Deep search helper to retrieve property values from flat or nested objects
 function getMemberValue(member: any, keys: string[], fallback: string = ''): string {
   if (!member || typeof member !== 'object') return fallback;
 
-  for (const k of keys) {
-    if (member[k] !== undefined && member[k] !== null && String(member[k]).trim() !== '') {
-      return String(member[k]).trim();
-    }
-  }
+  // Flatten potential nested containers
+  const targets = [
+    member,
+    member.raw_user_meta_data,
+    member.user_metadata,
+    member.metadata,
+    member.data,
+  ].filter(Boolean);
 
-  const lowerKeys = keys.map((k) => k.toLowerCase());
-  for (const key of Object.keys(member)) {
-    if (lowerKeys.includes(key.toLowerCase())) {
-      const val = member[key];
-      if (val !== undefined && val !== null && String(val).trim() !== '') {
-        return String(val).trim();
+  for (const obj of targets) {
+    // 1. Exact match
+    for (const k of keys) {
+      if (obj[k] !== undefined && obj[k] !== null && String(obj[k]).trim() !== '') {
+        return String(obj[k]).trim();
+      }
+    }
+
+    // 2. Case-insensitive match
+    const lowerKeys = keys.map((k) => k.toLowerCase());
+    for (const key of Object.keys(obj)) {
+      if (lowerKeys.includes(key.toLowerCase())) {
+        const val = obj[key];
+        if (val !== undefined && val !== null && String(val).trim() !== '') {
+          return String(val).trim();
+        }
       }
     }
   }
@@ -67,22 +81,26 @@ function getMemberValue(member: any, keys: string[], fallback: string = ''): str
 }
 
 export async function generateIDCardBuffer(member: any): Promise<Buffer> {
+  // Log full Supabase object structure to Vercel Function Logs for debugging
+  console.log('=== SUPABASE RECORD RAW DATA ===');
+  console.log(JSON.stringify(member, null, 2));
+
   if (!member) member = {};
 
   const font = await getFont();
 
-  // Extract member registration details
-  const fullName = getMemberValue(member, ['full_name', 'fullname', 'name', 'member_name', 'Name'], '');
-  const dob = getMemberValue(member, ['dob', 'date_of_birth', 'birth_date', 'DOB'], '');
-  const gender = getMemberValue(member, ['gender', 'sex', 'Gender'], '');
-  const tempId = getMemberValue(member, ['membership_id', 'temporary_id', 'id', 'member_id', 'ID'], '');
-  const district = getMemberValue(member, ['district', 'city', 'location', 'District'], '');
-  const teamName = getMemberValue(member, ['team_name', 'team', 'Team'], 'State HQ Team');
-  const coordinator = getMemberValue(member, ['coordinator', 'coordinator_name', 'Coordinator'], '');
-  const phone = getMemberValue(member, ['phone', 'phone_number', 'mobile', 'Phone'], '');
-  const photoUrl = getMemberValue(member, ['photo_url', 'photoUrl', 'photo', 'avatar_url', 'Photo'], '');
+  // Field resolution with broad matching criteria
+  const full_name = getMemberValue(member, ['full_name', 'fullname', 'name', 'member_name', 'Name', 'first_name']);
+  const dob = getMemberValue(member, ['dob', 'date_of_birth', 'birth_date', 'DOB', 'created_at']);
+  const gender = getMemberValue(member, ['gender', 'sex', 'Gender']);
+  const membership_id = getMemberValue(member, ['temp_id', 'temporary_id', 'id', 'member_id', 'ID', 'code']);
+  const district = getMemberValue(member, ['district', 'city', 'location', 'District', 'district_name']);
+  const team_name = getMemberValue(member, ['team_name', 'team', 'Team'], 'State HQ Team');
+  const coordinator = getMemberValue(member, ['coordinator', 'coordinator_name', 'Coordinator']);
+  const phone = getMemberValue(member, ['phone', 'phone_number', 'mobile', 'Phone', 'contact']);
+  const photoUrl = getMemberValue(member, ['photo_url', 'photoUrl', 'photo', 'avatar_url', 'Photo']);
 
-  // 1. Read background template
+  // 1. Read template image
   let backgroundBase64 = '';
   const publicDir = path.join(process.cwd(), 'public');
   try {
@@ -102,7 +120,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     console.error('Failed to load background template:', e);
   }
 
-  // 2. Fetch photo
+  // 2. Fetch member photo
   let photoBase64 = '';
   if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
@@ -118,14 +136,14 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     }
   }
 
-  // 3. Set startX = 515 for optimal right padding after the colons
+  // 3. Render vector text paths at startX = 515
   const startX = 540;
-  const pathFullName = textToPathSvg(font, fullName, startX, 242, 18, '#000000');
+  const pathFullName = textToPathSvg(font, full_name, startX, 242, 18, '#000000');
   const pathDob = textToPathSvg(font, dob, startX, 279, 17, '#000000');
   const pathGender = textToPathSvg(font, gender, startX, 316, 17, '#000000');
-  const pathTempId = textToPathSvg(font, tempId, startX, 353, 17, '#C00000');
+  const pathMembershipId = textToPathSvg(font, membership_id, startX, 353, 17, '#C00000');
   const pathDistrict = textToPathSvg(font, district, startX, 390, 17, '#000000');
-  const pathTeamName = textToPathSvg(font, teamName, startX, 427, 17, '#000000');
+  const pathTeamName = textToPathSvg(font, team_name, startX, 427, 17, '#000000');
   const pathCoordinator = textToPathSvg(font, coordinator, startX, 464, 17, '#000000');
   const pathPhone = textToPathSvg(font, phone, startX, 501, 18, '#0056B3');
 
@@ -146,12 +164,12 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
           : ''
       }
 
-      <!-- Vector Path Text Overlay -->
+      <!-- Vector Path Overlay -->
       <g>
         ${pathFullName}
         ${pathDob}
         ${pathGender}
-        ${pathTempId}
+        ${pathMembershipId}
         ${pathDistrict}
         ${pathTeamName}
         ${pathCoordinator}
@@ -160,7 +178,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     </svg>
   `;
 
-  // 5. Render PNG
+  // 5. Render PNG Buffer
   const { Resvg } = await import('@resvg/resvg-js');
   const resvg = new Resvg(svgString, {
     fitTo: { mode: 'width', value: 1024 },
