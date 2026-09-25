@@ -4,7 +4,6 @@ import * as opentype from 'opentype.js';
 
 let cachedFont: opentype.Font | null = null;
 
-// Helper to fetch and load opentype font into memory
 async function getFont(): Promise<opentype.Font | null> {
   if (cachedFont) return cachedFont;
   try {
@@ -22,7 +21,6 @@ async function getFont(): Promise<opentype.Font | null> {
   return null;
 }
 
-// Convert plain text into raw SVG vector <path> string
 function textToPathSvg(
   font: opentype.Font | null,
   text: string,
@@ -73,7 +71,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
 
   const font = await getFont();
 
-  // Extract database values with defaults
+  // Extract database values with clear fallbacks so fields never render blank
   const fullName = getMemberValue(member, ['full_name', 'fullname', 'name', 'member_name', 'Name'], 'Member Name');
   const dob = getMemberValue(member, ['dob', 'date_of_birth', 'birth_date', 'DOB'], 'DD/MM/YYYY');
   const gender = getMemberValue(member, ['gender', 'sex', 'Gender'], 'Male');
@@ -84,7 +82,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   const phone = getMemberValue(member, ['phone', 'phone_number', 'mobile', 'Phone'], '9876543210');
   const photoUrl = getMemberValue(member, ['photo_url', 'photoUrl', 'photo', 'avatar_url', 'Photo'], '');
 
-  // 1. Read background template from public directory
+  // 1. Read background template
   let backgroundBase64 = '';
   const publicDir = path.join(process.cwd(), 'public');
   try {
@@ -104,7 +102,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     console.error('Failed to load background template:', e);
   }
 
-  // 2. Fetch member photo as Base64 URI
+  // 2. Fetch photo
   let photoBase64 = '';
   if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
@@ -120,16 +118,16 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     }
   }
 
-  // 3. Convert all member details into vector path elements
+  // 3. Convert all member details into vector path elements with baseline offsets (y shifted up by ~12px)
   const startX = 330;
-  const pathFullName = textToPathSvg(font, fullName, startX, 252, 18, '#000000');
-  const pathDob = textToPathSvg(font, dob, startX, 289, 17, '#000000');
-  const pathGender = textToPathSvg(font, gender, startX, 326, 17, '#000000');
-  const pathTempId = textToPathSvg(font, tempId, startX, 363, 17, '#C00000');
-  const pathDistrict = textToPathSvg(font, district, startX, 400, 17, '#000000');
-  const pathTeamName = textToPathSvg(font, teamName, startX, 437, 17, '#000000');
-  const pathCoordinator = textToPathSvg(font, coordinator, startX, 474, 17, '#000000');
-  const pathPhone = textToPathSvg(font, phone, startX, 511, 18, '#0056B3');
+  const pathFullName = textToPathSvg(font, fullName, startX, 242, 18, '#000000');
+  const pathDob = textToPathSvg(font, dob, startX, 279, 17, '#000000');
+  const pathGender = textToPathSvg(font, gender, startX, 316, 17, '#000000');
+  const pathTempId = textToPathSvg(font, tempId, startX, 353, 17, '#C00000');
+  const pathDistrict = textToPathSvg(font, district, startX, 390, 17, '#000000');
+  const pathTeamName = textToPathSvg(font, teamName, startX, 427, 17, '#000000');
+  const pathCoordinator = textToPathSvg(font, coordinator, startX, 464, 17, '#000000');
+  const pathPhone = textToPathSvg(font, phone, startX, 501, 18, '#0056B3');
 
   // 4. Construct output SVG
   const svgString = `
