@@ -2,27 +2,83 @@ import path from 'path';
 import fs from 'fs';
 
 export async function generateIDCardBuffer(member: any): Promise<Buffer> {
-  // Extract values with fallbacks across common database column names
-  const fullName = member.full_name || member.fullName || member.name || 'N/A';
-  const dob = member.dob || member.date_of_birth || member.birth_date || 'N/A';
-  const gender = member.gender || member.sex || 'N/A';
-  const tempId = member.temp_id || member.temporary_id || member.id || 'N/A';
-  const district = member.district || member.city || 'N/A';
-  const teamName = member.team_name || member.team || 'State HQ Team';
-  const coordinator = member.coordinator || member.coordinator_name || 'N/A';
-  const phone = member.phone || member.phone_number || member.mobile || 'N/A';
+  // Print incoming member object to Vercel logs for debugging
+  console.log('Incoming member data for ID card:', JSON.stringify(member));
+
+  if (!member) {
+    member = {};
+  }
+
+  // Extract fields with exhaustive fallbacks across all database naming conventions
+  const fullName = String(
+    member.full_name ||
+    member.fullname ||
+    member.fullName ||
+    member.name ||
+    member.member_name ||
+    ''
+  ).trim();
+
+  const dob = String(
+    member.dob ||
+    member.date_of_birth ||
+    member.birth_date ||
+    member.created_at?.split('T')[0] ||
+    ''
+  ).trim();
+
+  const gender = String(
+    member.gender ||
+    member.sex ||
+    ''
+  ).trim();
+
+  const tempId = String(
+    member.temp_id ||
+    member.temporary_id ||
+    member.id ||
+    member.membership_id ||
+    ''
+  ).trim();
+
+  const district = String(
+    member.district ||
+    member.city ||
+    member.location ||
+    ''
+  ).trim();
+
+  const teamName = String(
+    member.team_name ||
+    member.team ||
+    'State HQ Team'
+  ).trim();
+
+  const coordinator = String(
+    member.coordinator ||
+    member.coordinator_name ||
+    ''
+  ).trim();
+
+  const phone = String(
+    member.phone ||
+    member.phone_number ||
+    member.mobile ||
+    ''
+  ).trim();
+
   const photoUrl = member.photo_url || member.photoUrl || member.photo || member.avatar_url || '';
 
   // 1. Read background template from public folder
   let backgroundBase64 = '';
   try {
     const publicDir = path.join(process.cwd(), 'public');
-    let templatePath = path.join(publicDir, 'id-template.jpg');
-    let contentType = 'image/jpeg';
+    let templatePath = path.join(publicDir, 'id-template.png');
+    let contentType = 'image/png';
 
     if (!fs.existsSync(templatePath)) {
-      templatePath = path.join(publicDir, 'id-template.png');
-      contentType = 'image/png';
+      templatePath = path.join(publicDir, 'id-template.jpg');
+      contentType = 'image/jpeg';
     }
 
     if (fs.existsSync(templatePath)) {
@@ -35,7 +91,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
 
   // 2. Fetch member photo as base64 URI
   let photoBase64 = '';
-  if (photoUrl && photoUrl.startsWith('http')) {
+  if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
       const imgRes = await fetch(photoUrl);
       if (imgRes.ok) {
@@ -44,12 +100,12 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
         const type = imgRes.headers.get('content-type') || 'image/png';
         photoBase64 = `data:${type};base64,${buffer.toString('base64')}`;
       }
-    } catch {
-      photoBase64 = '';
+    } catch (err) {
+      console.error('Failed to fetch photo URL:', err);
     }
   }
 
-  // 3. Build SVG overlay with high-contrast text rendering
+  // 3. Build SVG overlay placing text on top of the blank lines (x="320")
   const svgString = `
     <svg width="1024" height="654" viewBox="0 0 1024 654" xmlns="http://www.w3.org/2000/svg">
       <!-- Background Template -->
@@ -66,31 +122,31 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
           : ''
       }
 
-      <!-- Explicit Text Overlays aligned precisely on line height -->
-      <g font-family="Arial, Helvetica, sans-serif" font-weight="bold" fill="#000000" dominant-baseline="alphabetic">
+      <!-- Registered Member Details directly on the underline -->
+      <g font-family="DejaVu Sans, Arial, sans-serif" font-weight="bold" fill="#000000">
         <!-- Name / ಹೆಸರು -->
-        <text x="490" y="252" font-size="20">${fullName}</text>
+        <text x="320" y="250" font-size="18">${fullName}</text>
 
         <!-- DOB / ಜನ್ಮ ದಿನಾಂಕ -->
-        <text x="490" y="289" font-size="18">${dob}</text>
+        <text x="320" y="287" font-size="17">${dob}</text>
 
         <!-- Gender / ಲಿಂಗ -->
-        <text x="490" y="326" font-size="18">${gender}</text>
+        <text x="320" y="324" font-size="17">${gender}</text>
 
         <!-- Temporary ID / ತಾತ್ಕಾಲಿಕ ಐಡಿ -->
-        <text x="490" y="363" font-size="18" fill="#C00000">${tempId}</text>
+        <text x="320" y="361" font-size="17" fill="#C00000">${tempId}</text>
 
         <!-- District / ಜಿಲ್ಲೆ -->
-        <text x="490" y="400" font-size="18">${district}</text>
+        <text x="320" y="398" font-size="17">${district}</text>
 
         <!-- Team Name / ತಂಡದ ಹೆಸರು -->
-        <text x="490" y="437" font-size="18">${teamName}</text>
+        <text x="320" y="435" font-size="17">${teamName}</text>
 
         <!-- Coordinator / ಸಂಯೋಜಕ -->
-        <text x="490" y="474" font-size="18">${coordinator}</text>
+        <text x="320" y="472" font-size="17">${coordinator}</text>
 
         <!-- Contact Number / ಸಂಪರ್ಕ ಸಂಖ್ಯೆ -->
-        <text x="490" y="511" font-size="20" fill="#0056B3">${phone}</text>
+        <text x="320" y="509" font-size="18" fill="#0056B3">${phone}</text>
       </g>
     </svg>
   `;
