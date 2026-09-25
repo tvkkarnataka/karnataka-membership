@@ -39,7 +39,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
 
   const publicDir = path.join(process.cwd(), 'public');
 
-  // 1. Read template image
+  // 1. Read base background template
   let templatePath = path.join(publicDir, 'id-template.png');
   if (!fs.existsSync(templatePath)) {
     templatePath = path.join(publicDir, 'id-template.jpg');
@@ -61,7 +61,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
       .toBuffer();
   }
 
-  // 2. Extract database values
+  // 2. Extract member details from database row
   const fullName = getMemberValue(member, ['full_name', 'fullname', 'name']);
   const dob = getMemberValue(member, ['dob', 'date_of_birth']);
   const gender = getMemberValue(member, ['gender', 'sex']);
@@ -74,7 +74,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
 
   const compositeLayers: Array<{ input: Buffer; top?: number; left?: number }> = [];
 
-  // 3. Process Member Photo & Position at left: 808, top: 242 (inside the white photo frame)
+  // 3. Process Member Photo -> Positioned strictly at left: 808, top: 242 inside the photo frame
   if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
       const imgRes = await fetch(photoUrl);
@@ -82,6 +82,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
         const photoArrBuffer = await imgRes.arrayBuffer();
         const rawPhotoBuffer = Buffer.from(photoArrBuffer);
 
+        // Crop & Resize photo to match box (170x210)
         const processedPhoto = await sharp(rawPhotoBuffer)
           .resize(170, 210, { fit: 'cover' })
           .toBuffer();
@@ -93,21 +94,21 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
         });
       }
     } catch (e) {
-      console.error('Failed to fetch photo:', e);
+      console.error('Failed to fetch user photo:', e);
     }
   }
 
-  // 4. Render SVG text overlay ONLY for the field values (x: 515)
-  const startX = 540;
+  // 4. Pure SVG Text Overlay for database field values
+  const startX = 550;
   const svgTextOverlay = Buffer.from(`
     <svg width="1024" height="654" xmlns="http://www.w3.org/2000/svg">
       <style>
-        .bold-val {
+        .card-text {
           font-family: Arial, sans-serif;
           font-weight: bold;
         }
       </style>
-      <g class="bold-val">
+      <g class="card-text">
         <!-- Name / ಹೆಸರು -->
         <text x="${startX}" y="246" font-size="19" fill="#000000">${escapeXml(fullName)}</text>
 
