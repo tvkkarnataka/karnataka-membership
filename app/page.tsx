@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { 
   CheckCircle2, 
   RefreshCw, 
@@ -9,10 +9,18 @@ import {
   Upload 
 } from 'lucide-react';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+// Dynamic helper function to safely load Supabase client on demand
+const getSupabaseClient = (): SupabaseClient => {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://ytaqlejhsxjanhmhwmkv.supabase.co';
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  if (!url || !key) {
+    alert('Supabase credentials missing! Please check your environment variables.');
+    throw new Error('NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY is missing.');
+  }
+
+  return createClient(url, key);
+};
 
 const KARNATAKA_DISTRICTS = [
   'Bagalkote', 'Ballari', 'Belagavi', 'Bengaluru Rural', 'Bengaluru Urban',
@@ -38,6 +46,7 @@ export default function MembershipDrive() {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [dob, setDob] = useState('');
+  const [gender, setGender] = useState('');
   const [district, setDistrict] = useState('');
   const [teamName, setTeamName] = useState('');
   const [coordinator, setCoordinator] = useState('');
@@ -59,6 +68,7 @@ export default function MembershipDrive() {
     setFullName('');
     setPhone('');
     setDob('');
+    setGender('');
     setDistrict('');
     setTeamName('');
     setCoordinator('');
@@ -70,9 +80,7 @@ export default function MembershipDrive() {
   };
 
   const uploadFileDirect = async (file: File, folder: string, phoneNum: string): Promise<string> => {
-    if (!supabaseUrl || !supabaseAnonKey) {
-      throw new Error('Supabase client credentials are missing. Please check your environment variables.');
-    }
+    const supabase = getSupabaseClient();
 
     const fileExt = file.name.split('.').pop() || 'jpg';
     const cleanFileName = `${folder}/${phoneNum}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}.${fileExt}`;
@@ -110,6 +118,11 @@ export default function MembershipDrive() {
       return;
     }
 
+    if (!gender) {
+      setErrorMessage('Please select gender.');
+      return;
+    }
+
     if (!photoFile || !aadharFile || !panFile) {
       setErrorMessage('Please upload all 3 required documents (Photo, Aadhaar, and PAN).');
       return;
@@ -118,14 +131,14 @@ export default function MembershipDrive() {
     setLoading(true);
 
     try {
-      // 1. Upload files directly from the browser to Supabase Storage
+      // 1. Upload files directly to Supabase Storage
       const [photoUrl, aadharUrl, panUrl] = await Promise.all([
         uploadFileDirect(photoFile, 'photos', sanitizedPhone),
         uploadFileDirect(aadharFile, 'aadhar', sanitizedPhone),
         uploadFileDirect(panFile, 'pan', sanitizedPhone),
       ]);
 
-      // 2. Submit record metadata to backend API
+      // 2. Save registration record via backend API
       const res = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -133,6 +146,7 @@ export default function MembershipDrive() {
           fullName,
           phone: sanitizedPhone,
           dob,
+          gender,
           district,
           teamName,
           coordinator,
@@ -168,7 +182,7 @@ export default function MembershipDrive() {
     <main className="min-h-screen bg-slate-50 text-slate-900 flex items-center justify-center p-4">
       <div className="max-w-lg w-full bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-xl relative overflow-hidden my-6">
         
-        {/* Flag Stripe Header */}
+        {/* Header Stripe */}
         <div className="absolute top-0 left-0 right-0 h-3 flex">
           <div className="w-1/3 bg-[#FF0000]"></div>
           <div className="w-1/3 bg-[#FFFF00]"></div>
@@ -187,7 +201,7 @@ export default function MembershipDrive() {
           />
         </div>
 
-        {/* Title */}
+        {/* Title Banner */}
         <div className="text-center mb-6">
           <span className="inline-block bg-red-50 text-red-600 text-xs px-3.5 py-1 rounded-full uppercase tracking-wider font-extrabold border border-red-200 mb-2">
             REGISTRATION
@@ -233,7 +247,7 @@ export default function MembershipDrive() {
           </div>
         )}
 
-        {/* Form */}
+        {/* Form View */}
         {!isRegistered ? (
           <form onSubmit={handleSubmitRegistration} className="space-y-4">
             <div>
@@ -265,6 +279,7 @@ export default function MembershipDrive() {
               />
             </div>
 
+            {/* DOB & Gender Selection */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-700 mb-1">
@@ -282,22 +297,41 @@ export default function MembershipDrive() {
 
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-700 mb-1">
-                  District (<span className="text-red-600">ಜಿಲ್ಲೆ</span>)
+                  Gender (<span className="text-red-600">ಲಿಂಗ</span>)
                 </label>
                 <select 
                   required 
-                  value={district} 
-                  onChange={(e) => setDistrict(e.target.value)}
+                  value={gender} 
+                  onChange={(e) => setGender(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:bg-white text-sm transition"
                 >
-                  <option value="">Select District</option>
-                  {KARNATAKA_DISTRICTS.map((dist) => (
-                    <option key={dist} value={dist}>{dist}</option>
-                  ))}
+                  <option value="">Select Gender</option>
+                  <option value="Male">Male (ಪುರುಷ)</option>
+                  <option value="Female">Female (ಮಹಿಳೆ)</option>
+                  <option value="Other">Other (ಇತರೆ)</option>
                 </select>
               </div>
             </div>
 
+            {/* District Selection */}
+            <div>
+              <label className="block text-xs font-bold uppercase text-slate-700 mb-1">
+                District (<span className="text-red-600">ಜಿಲ್ಲೆ</span>)
+              </label>
+              <select 
+                required 
+                value={district} 
+                onChange={(e) => setDistrict(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:bg-white text-sm transition"
+              >
+                <option value="">Select District</option>
+                {KARNATAKA_DISTRICTS.map((dist) => (
+                  <option key={dist} value={dist}>{dist}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Team Name & Coordinator */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-700 mb-1">
