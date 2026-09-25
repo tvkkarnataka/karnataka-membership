@@ -161,13 +161,13 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   const startX = 780;
 
   const pathFullName = safeTextToPath(font, fullName, startX, 410, 28, '#000000');
-  const pathDob = safeTextToPath(font, dob, startX, 470, 26, '#000000');
-  const pathGender = safeTextToPath(font, gender, startX, 526, 26, '#000000');
-  const pathTempId = safeTextToPath(font, tempId, startX, 582, 26, '#C00000');
-  const pathDistrict = safeTextToPath(font, district, startX, 630, 26, '#000000');
-  const pathTeamName = safeTextToPath(font, teamName, startX, 700, 24, '#000000');
-  const pathCoordinator = safeTextToPath(font, coordinator, startX, 765, 24, '#000000');
-  const pathPhone = safeTextToPath(font, phone, startX, 815, 28, '#0056B3');
+  const pathDob = safeTextToPath(font, dob, startX, 459, 26, '#000000');
+  const pathGender = safeTextToPath(font, gender, startX, 510, 26, '#000000');
+  const pathTempId = safeTextToPath(font, tempId, startX, 565, 26, '#C00000');
+  const pathDistrict = safeTextToPath(font, district, startX, 610, 26, '#000000');
+  const pathTeamName = safeTextToPath(font, teamName, startX, 680, 24, '#000000');
+  const pathCoordinator = safeTextToPath(font, coordinator, startX, 738, 24, '#000000');
+  const pathPhone = safeTextToPath(font, phone, startX, 789, 28, '#0056B3');
 
   const svgVectorOverlay = Buffer.from(`
     <svg width="${canvasWidth}" height="${canvasHeight}" xmlns="http://www.w3.org/2000/svg">
