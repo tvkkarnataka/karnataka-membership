@@ -1,14 +1,16 @@
 import path from 'path';
 import fs from 'fs';
+import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
 
-function escapeXml(str: string): string {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+let fontRegistered = false;
+
+function registerFont() {
+  if (fontRegistered) return;
+  const fontPath = path.join(process.cwd(), 'public', 'Roboto-Bold.ttf');
+  if (fs.existsSync(fontPath)) {
+    GlobalFonts.registerFromPath(fontPath, 'Roboto');
+    fontRegistered = true;
+  }
 }
 
 function getMemberValue(member: any, keys: string[], fallback: string = ''): string {
@@ -36,48 +38,28 @@ function getMemberValue(member: any, keys: string[], fallback: string = ''): str
 export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   if (!member) member = {};
 
+  registerFont();
+
+  // Create canvas matching template dimensions
+  const canvas = createCanvas(1024, 654);
+  const ctx = canvas.getContext('2d');
+
+  // 1. Draw Background Template
   const publicDir = path.join(process.cwd(), 'public');
+  let templatePath = path.join(publicDir, 'id-template.png');
+  if (!fs.existsSync(templatePath)) {
+    templatePath = path.join(publicDir, 'id-template.jpg');
+  }
 
-  // 1. Read local TTF font file from public directory
-  let fontBuffer: Buffer | null = null;
-  const localFontPath = path.join(publicDir, 'Roboto-Bold.ttf');
-
-  if (fs.existsSync(localFontPath)) {
-    fontBuffer = fs.readFileSync(localFontPath);
+  if (fs.existsSync(templatePath)) {
+    const bgImage = await loadImage(templatePath);
+    ctx.drawImage(bgImage, 0, 0, 1024, 654);
   } else {
-    try {
-      const fontRes = await fetch(
-        'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-700-normal.ttf'
-      );
-      if (fontRes.ok) {
-        const fontArray = await fontRes.arrayBuffer();
-        fontBuffer = Buffer.from(fontArray);
-      }
-    } catch (e) {
-      console.error('Failed to fetch fallback font:', e);
-    }
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, 1024, 654);
   }
 
-  // 2. Read background template
-  let backgroundBase64 = '';
-  try {
-    let templatePath = path.join(publicDir, 'id-template.png');
-    let contentType = 'image/png';
-
-    if (!fs.existsSync(templatePath)) {
-      templatePath = path.join(publicDir, 'id-template.jpg');
-      contentType = 'image/jpeg';
-    }
-
-    if (fs.existsSync(templatePath)) {
-      const templateBuffer = fs.readFileSync(templatePath);
-      backgroundBase64 = `data:${contentType};base64,${templateBuffer.toString('base64')}`;
-    }
-  } catch (e) {
-    console.error('Failed to load background template:', e);
-  }
-
-  // 3. Extract database properties
+  // 2. Extract database fields
   const fullName = getMemberValue(member, ['full_name', 'fullname', 'name']);
   const dob = getMemberValue(member, ['dob', 'date_of_birth']);
   const gender = getMemberValue(member, ['gender', 'sex']);
@@ -88,85 +70,63 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   const phone = getMemberValue(member, ['phone', 'mobile']);
   const photoUrl = getMemberValue(member, ['photo_url', 'avatar_url']);
 
-  // 4. Fetch photo as Base64 Data URI
-  let photoBase64 = '';
+  // 3. Draw Member Photo
   if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
-      const imgRes = await fetch(photoUrl);
-      if (imgRes.ok) {
-        const arrayBuffer = await imgRes.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-        const type = imgRes.headers.get('content-type') || 'image/png';
-        photoBase64 = `data:${type};base64,${buffer.toString('base64')}`;
-      }
-    } catch (err) {
-      console.error('Failed to fetch photo:', err);
+      const userPhoto = await loadImage(photoUrl);
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(808, 242, 170, 210, 6);
+      ctx.clip();
+      ctx.drawImage(userPhoto, 808, 242, 170, 210);
+      ctx.restore();
+    } catch (e) {
+      console.error('Failed to draw photo:', e);
     }
   }
 
-  // 5. Build standard SVG string
+  // 4. Render Text Overlay on Underlined Spaces (startX = 515)
+  const fontName = fontRegistered ? 'Roboto' : 'sans-serif';
   const startX = 540;
-  const svgString = `
-    <svg width="1024" height="654" viewBox="0 0 1024 654" xmlns="http://www.w3.org/2000/svg">
-      <!-- Background Template -->
-      ${
-        backgroundBase64
-          ? `<image x="0" y="0" width="1024" height="654" href="${backgroundBase64}" preserveAspectRatio="none"/>`
-          : `<rect width="1024" height="654" fill="#FFFFFF"/>`
-      }
 
-      <!-- Member Photo -->
-      ${
-        photoBase64
-          ? `<image x="808" y="242" width="170" height="210" href="${photoBase64}" preserveAspectRatio="xMidYMid slice" clip-path="inset(0px round 6px)"/>`
-          : ''
-      }
+  ctx.textBaseline = 'middle';
 
-      <!-- SVG Text Overlay -->
-      <g font-family="Roboto" font-weight="bold">
-        <!-- Name / ಹೆಸರು -->
-        <text x="${startX}" y="246" font-size="18" fill="#000000">${escapeXml(fullName)}</text>
+  // Full Name
+  ctx.font = `bold 20px ${fontName}`;
+  ctx.fillStyle = '#000000';
+  ctx.fillText(fullName, startX, 238);
 
-        <!-- DOB / ಜನ್ಮ ದಿನಾಂಕ -->
-        <text x="${startX}" y="283" font-size="17" fill="#000000">${escapeXml(dob)}</text>
+  // DOB
+  ctx.font = `bold 18px ${fontName}`;
+  ctx.fillText(dob, startX, 275);
 
-        <!-- Gender / ಲಿಂಗ -->
-        <text x="${startX}" y="320" font-size="17" fill="#000000">${escapeXml(gender)}</text>
+  // Gender
+  ctx.font = `bold 18px ${fontName}`;
+  ctx.fillText(gender, startX, 312);
 
-        <!-- Temporary ID / ತಾತ್ಕಾಲಿಕ ಐಡಿ -->
-        <text x="${startX}" y="357" font-size="17" fill="#C00000">${escapeXml(tempId)}</text>
+  // Temporary ID
+  ctx.font = `bold 18px ${fontName}`;
+  ctx.fillStyle = '#C00000';
+  ctx.fillText(tempId, startX, 349);
 
-        <!-- District / ಜಿಲ್ಲೆ -->
-        <text x="${startX}" y="394" font-size="17" fill="#000000">${escapeXml(district)}</text>
+  // District
+  ctx.font = `bold 18px ${fontName}`;
+  ctx.fillStyle = '#000000';
+  ctx.fillText(district, startX, 386);
 
-        <!-- Team Name / ತಂಡದ ಹೆಸರು -->
-        <text x="${startX}" y="431" font-size="15" fill="#000000">${escapeXml(teamName)}</text>
+  // Team Name
+  ctx.font = `bold 16px ${fontName}`;
+  ctx.fillText(teamName, startX, 423);
 
-        <!-- Coordinator / ಸಂಯೋಜಕ -->
-        <text x="${startX}" y="468" font-size="15" fill="#000000">${escapeXml(coordinator)}</text>
+  // Coordinator
+  ctx.font = `bold 16px ${fontName}`;
+  ctx.fillText(coordinator, startX, 460);
 
-        <!-- Contact Number / ಸಂಪರ್ಕ ಸಂಖ್ಯೆ -->
-        <text x="${startX}" y="505" font-size="18" fill="#0056B3">${escapeXml(phone)}</text>
-      </g>
-    </svg>
-  `;
+  // Phone Number
+  ctx.font = `bold 19px ${fontName}`;
+  ctx.fillStyle = '#0056B3';
+  ctx.fillText(phone, startX, 497);
 
-  // 6. Render PNG using Resvg with fontBuffers configuration
-  const { Resvg } = await import('@resvg/resvg-js');
-
-  const opts: any = {
-    fitTo: { mode: 'width', value: 1024 },
-  };
-
-  if (fontBuffer) {
-    opts.font = {
-      fontBuffers: [fontBuffer],
-      defaultFontFamily: 'Roboto',
-      loadSystemFonts: false,
-    };
-  }
-
-  const resvg = new Resvg(svgString, opts);
-  const pngData = resvg.render();
-  return Buffer.from(pngData.asPng());
+  // 5. Export PNG Buffer
+  return canvas.toBuffer('image/png');
 }
