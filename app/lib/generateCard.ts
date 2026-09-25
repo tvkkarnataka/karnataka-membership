@@ -1,78 +1,50 @@
 import path from 'path';
 import fs from 'fs';
-import * as opentype from 'opentype.js';
 
-let cachedFont: opentype.Font | null = null;
+let cachedFontBuffer: Buffer | null = null;
 
-async function getFont(): Promise<opentype.Font | null> {
-  if (cachedFont) return cachedFont;
+async function getFontBuffer(): Promise<Buffer | null> {
+  if (cachedFontBuffer) return cachedFontBuffer;
   try {
     const fontRes = await fetch(
       'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-700-normal.ttf'
     );
     if (fontRes.ok) {
-      const fontBuffer = await fontRes.arrayBuffer();
-      cachedFont = opentype.parse(fontBuffer);
-      return cachedFont;
+      const arrayBuf = await fontRes.arrayBuffer();
+      cachedFontBuffer = Buffer.from(arrayBuf);
+      return cachedFontBuffer;
     }
   } catch (e) {
-    console.error('Failed to load opentype font:', e);
+    console.error('Failed to fetch font buffer:', e);
   }
   return null;
 }
 
-function textToPathSvg(
-  font: opentype.Font | null,
-  text: string,
-  x: number,
-  y: number,
-  fontSize: number,
-  color: string
-): string {
-  if (!text) return '';
-  if (!font) {
-    return `<text x="${x}" y="${y}" font-size="${fontSize}" fill="${color}" font-weight="bold">${text}</text>`;
-  }
-
-  try {
-    const path = font.getPath(text, x, y, fontSize);
-    path.fill = color;
-    return path.toSVG(2);
-  } catch (e) {
-    console.error('Error converting text to path:', e);
-    return `<text x="${x}" y="${y}" font-size="${fontSize}" fill="${color}">${text}</text>`;
-  }
+function escapeXml(str: string): string {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }
 
-// Deep search helper to retrieve property values from flat or nested objects
 function getMemberValue(member: any, keys: string[], fallback: string = ''): string {
   if (!member || typeof member !== 'object') return fallback;
 
-  // Flatten potential nested containers
-  const targets = [
-    member,
-    member.raw_user_meta_data,
-    member.user_metadata,
-    member.metadata,
-    member.data,
-  ].filter(Boolean);
-
-  for (const obj of targets) {
-    // 1. Exact match
-    for (const k of keys) {
-      if (obj[k] !== undefined && obj[k] !== null && String(obj[k]).trim() !== '') {
-        return String(obj[k]).trim();
-      }
+  for (const k of keys) {
+    if (member[k] !== undefined && member[k] !== null && String(member[k]).trim() !== '') {
+      return String(member[k]).trim();
     }
+  }
 
-    // 2. Case-insensitive match
-    const lowerKeys = keys.map((k) => k.toLowerCase());
-    for (const key of Object.keys(obj)) {
-      if (lowerKeys.includes(key.toLowerCase())) {
-        const val = obj[key];
-        if (val !== undefined && val !== null && String(val).trim() !== '') {
-          return String(val).trim();
-        }
+  const lowerKeys = keys.map((k) => k.toLowerCase());
+  for (const key of Object.keys(member)) {
+    if (lowerKeys.includes(key.toLowerCase())) {
+      const val = member[key];
+      if (val !== undefined && val !== null && String(val).trim() !== '') {
+        return String(val).trim();
       }
     }
   }
@@ -81,26 +53,22 @@ function getMemberValue(member: any, keys: string[], fallback: string = ''): str
 }
 
 export async function generateIDCardBuffer(member: any): Promise<Buffer> {
-  // Log full Supabase object structure to Vercel Function Logs for debugging
-  console.log('=== SUPABASE RECORD RAW DATA ===');
-  console.log(JSON.stringify(member, null, 2));
-
   if (!member) member = {};
 
-  const font = await getFont();
+  const fontBuffer = await getFontBuffer();
 
-  // Field resolution with broad matching criteria
-  const full_name = getMemberValue(member, ['full_name', 'fullname', 'name', 'member_name', 'Name', 'first_name']);
-  const dob = getMemberValue(member, ['dob', 'date_of_birth', 'birth_date', 'DOB', 'created_at']);
-  const gender = getMemberValue(member, ['gender', 'sex', 'Gender']);
-  const membership_id = getMemberValue(member, ['temp_id', 'temporary_id', 'id', 'member_id', 'ID', 'code']);
-  const district = getMemberValue(member, ['district', 'city', 'location', 'District', 'district_name']);
-  const team_name = getMemberValue(member, ['team_name', 'team', 'Team'], 'State HQ Team');
-  const coordinator = getMemberValue(member, ['coordinator', 'coordinator_name', 'Coordinator']);
-  const phone = getMemberValue(member, ['phone', 'phone_number', 'mobile', 'Phone', 'contact']);
-  const photoUrl = getMemberValue(member, ['photo_url', 'photoUrl', 'photo', 'avatar_url', 'Photo']);
+  // Map database properties based on your Supabase raw record keys
+  const fullName = getMemberValue(member, ['full_name', 'fullname', 'name']);
+  const dob = getMemberValue(member, ['dob', 'date_of_birth']);
+  const gender = getMemberValue(member, ['gender', 'sex']);
+  const tempId = getMemberValue(member, ['membership_id', 'temp_id', 'id']);
+  const district = getMemberValue(member, ['district', 'city']);
+  const teamName = getMemberValue(member, ['team_name', 'team'], 'Akila Karnataka Maanila Thalamai TVK');
+  const coordinator = getMemberValue(member, ['coordinator', 'coordinator_name']);
+  const phone = getMemberValue(member, ['phone', 'mobile']);
+  const photoUrl = getMemberValue(member, ['photo_url', 'avatar_url']);
 
-  // 1. Read template image
+  // 1. Read background template
   let backgroundBase64 = '';
   const publicDir = path.join(process.cwd(), 'public');
   try {
@@ -120,7 +88,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     console.error('Failed to load background template:', e);
   }
 
-  // 2. Fetch member photo
+  // 2. Fetch photo as Base64 Data URI
   let photoBase64 = '';
   if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
@@ -136,18 +104,8 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     }
   }
 
-  // 3. Render vector text paths at startX = 515
+  // 3. Construct clean SVG text nodes using `dominant-baseline="alphabetic"`
   const startX = 540;
-  const pathFullName = textToPathSvg(font, full_name, startX, 242, 18, '#000000');
-  const pathDob = textToPathSvg(font, dob, startX, 279, 17, '#000000');
-  const pathGender = textToPathSvg(font, gender, startX, 316, 17, '#000000');
-  const pathMembershipId = textToPathSvg(font, membership_id, startX, 353, 17, '#C00000');
-  const pathDistrict = textToPathSvg(font, district, startX, 390, 17, '#000000');
-  const pathTeamName = textToPathSvg(font, team_name, startX, 427, 17, '#000000');
-  const pathCoordinator = textToPathSvg(font, coordinator, startX, 464, 17, '#000000');
-  const pathPhone = textToPathSvg(font, phone, startX, 501, 18, '#0056B3');
-
-  // 4. Build output SVG
   const svgString = `
     <svg width="1024" height="654" viewBox="0 0 1024 654" xmlns="http://www.w3.org/2000/svg">
       <!-- Background Template -->
@@ -164,26 +122,50 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
           : ''
       }
 
-      <!-- Vector Path Overlay -->
-      <g>
-        ${pathFullName}
-        ${pathDob}
-        ${pathGender}
-        ${pathMembershipId}
-        ${pathDistrict}
-        ${pathTeamName}
-        ${pathCoordinator}
-        ${pathPhone}
+      <!-- Native Resvg Font Text Overlay -->
+      <g font-family="Roboto" font-weight="bold">
+        <!-- Name / ಹೆಸರು -->
+        <text x="${startX}" y="246" font-size="18" fill="#000000">${escapeXml(fullName)}</text>
+
+        <!-- DOB / ಜನ್ಮ ದಿನಾಂಕ -->
+        <text x="${startX}" y="283" font-size="17" fill="#000000">${escapeXml(dob)}</text>
+
+        <!-- Gender / ಲಿಂಗ -->
+        <text x="${startX}" y="320" font-size="17" fill="#000000">${escapeXml(gender)}</text>
+
+        <!-- Temporary ID / ತಾತ್ಕಾಲಿಕ ಐಡಿ -->
+        <text x="${startX}" y="357" font-size="17" fill="#C00000">${escapeXml(tempId)}</text>
+
+        <!-- District / ಜಿಲ್ಲೆ -->
+        <text x="${startX}" y="394" font-size="17" fill="#000000">${escapeXml(district)}</text>
+
+        <!-- Team Name / ತಂಡದ ಹೆಸರು -->
+        <text x="${startX}" y="431" font-size="16" fill="#000000">${escapeXml(teamName)}</text>
+
+        <!-- Coordinator / ಸಂಯೋಜಕ -->
+        <text x="${startX}" y="468" font-size="16" fill="#000000">${escapeXml(coordinator)}</text>
+
+        <!-- Contact Number / ಸಂಪರ್ಕ ಸಂಖ್ಯೆ -->
+        <text x="${startX}" y="505" font-size="18" fill="#0056B3">${escapeXml(phone)}</text>
       </g>
     </svg>
   `;
 
-  // 5. Render PNG Buffer
+  // 4. Pass font buffer directly to Resvg options
   const { Resvg } = await import('@resvg/resvg-js');
-  const resvg = new Resvg(svgString, {
+  
+  const resvgOptions: any = {
     fitTo: { mode: 'width', value: 1024 },
-  });
+  };
 
+  if (fontBuffer) {
+    resvgOptions.font = {
+      fontBuffers: [fontBuffer],
+      defaultFontFamily: 'Roboto',
+    };
+  }
+
+  const resvg = new Resvg(svgString, resvgOptions);
   const pngData = resvg.render();
   return Buffer.from(pngData.asPng());
 }
