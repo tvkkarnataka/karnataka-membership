@@ -1,17 +1,5 @@
 import path from 'path';
 import fs from 'fs';
-import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
-
-let fontRegistered = false;
-
-function registerFont() {
-  if (fontRegistered) return;
-  const fontPath = path.join(process.cwd(), 'public', 'Roboto-Bold.ttf');
-  if (fs.existsSync(fontPath)) {
-    GlobalFonts.registerFromPath(fontPath, 'Roboto');
-    fontRegistered = true;
-  }
-}
 
 function getMemberValue(member: any, keys: string[], fallback: string = ''): string {
   if (!member || typeof member !== 'object') return fallback;
@@ -38,14 +26,24 @@ function getMemberValue(member: any, keys: string[], fallback: string = ''): str
 export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   if (!member) member = {};
 
-  registerFont();
+  // Dynamic import to prevent Turbopack native binary bundling errors
+  const { createCanvas, loadImage, GlobalFonts } = await import('@napi-rs/canvas');
 
-  // Create canvas matching template dimensions
+  // Register font safely
+  const publicDir = path.join(process.cwd(), 'public');
+  const fontPath = path.join(publicDir, 'Roboto-Bold.ttf');
+  let fontRegistered = false;
+
+  if (fs.existsSync(fontPath)) {
+    GlobalFonts.registerFromPath(fontPath, 'Roboto');
+    fontRegistered = true;
+  }
+
+  // Create canvas matching template dimensions (1024x654)
   const canvas = createCanvas(1024, 654);
   const ctx = canvas.getContext('2d');
 
   // 1. Draw Background Template
-  const publicDir = path.join(process.cwd(), 'public');
   let templatePath = path.join(publicDir, 'id-template.png');
   if (!fs.existsSync(templatePath)) {
     templatePath = path.join(publicDir, 'id-template.jpg');
@@ -81,7 +79,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
       ctx.drawImage(userPhoto, 808, 242, 170, 210);
       ctx.restore();
     } catch (e) {
-      console.error('Failed to draw photo:', e);
+      console.error('Failed to draw member photo:', e);
     }
   }
 
@@ -122,7 +120,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   ctx.font = `bold 16px ${fontName}`;
   ctx.fillText(coordinator, startX, 460);
 
-  // Phone Number
+  // Contact Number
   ctx.font = `bold 19px ${fontName}`;
   ctx.fillStyle = '#0056B3';
   ctx.fillText(phone, startX, 497);
