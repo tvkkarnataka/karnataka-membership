@@ -2,47 +2,116 @@ import path from 'path';
 import fs from 'fs';
 
 export async function generateIDCardBuffer(member: any): Promise<Buffer> {
-  if (!member) member = {};
+  console.log('--- SUPABASE RECORD LOG ---');
+  console.log('Raw member object from Supabase:', JSON.stringify(member, null, 2));
 
-  // Extract registered values
-  const fullName = String(
-    member.full_name || member.fullname || member.fullName || member.name || ''
-  ).trim();
+  if (!member || typeof member !== 'object') {
+    member = {};
+  }
 
-  const dob = String(
-    member.dob || member.date_of_birth || member.birth_date || ''
-  ).trim();
+  // Helper to extract column values regardless of key casing or naming scheme
+  const getFieldValue = (candidateKeys: string[]): string => {
+    // Check direct properties first
+    for (const key of candidateKeys) {
+      if (member[key] !== undefined && member[key] !== null && String(member[key]).trim() !== '') {
+        return String(member[key]).trim();
+      }
+    }
 
-  const gender = String(
-    member.gender || member.sex || ''
-  ).trim();
+    // Case-insensitive fallback scan across all record keys
+    const lowerKeys = candidateKeys.map((k) => k.toLowerCase());
+    for (const recordKey of Object.keys(member)) {
+      if (lowerKeys.includes(recordKey.toLowerCase())) {
+        const val = member[recordKey];
+        if (val !== undefined && val !== null && String(val).trim() !== '') {
+          return String(val).trim();
+        }
+      }
+    }
 
-  const tempId = String(
-    member.membership_id || member.temporary_id || member.id || ''
-  ).trim();
+    return '';
+  };
 
-  const district = String(
-    member.district || member.city || ''
-  ).trim();
+  // Map values across all common registration table column variations
+  const fullName = getFieldValue([
+    'full_name',
+    'fullname',
+    'fullName',
+    'Name',
+    'name',
+    'member_name',
+    'memberName',
+  ]);
 
-  const teamName = String(
-    member.team_name || member.team || 'State HQ Team'
-  ).trim();
+  const dob = getFieldValue([
+    'dob',
+    'date_of_birth',
+    'dateOfBirth',
+    'birth_date',
+    'DOB',
+    'created_at',
+  ]);
 
-  const coordinator = String(
-    member.coordinator || member.coordinator_name || ''
-  ).trim();
+  const gender = getFieldValue([
+    'gender',
+    'sex',
+    'Gender',
+    'Sex',
+  ]);
 
-  const phone = String(
-    member.phone || member.phone_number || member.mobile || ''
-  ).trim();
+  const tempId = getFieldValue([
+    'temp_id',
+    'temporary_id',
+    'tempId',
+    'id',
+    'membership_id',
+    'memberId',
+  ]);
 
-  const photoUrl = member.photo_url || member.photoUrl || member.photo || member.avatar_url || '';
+  const district = getFieldValue([
+    'district',
+    'district_name',
+    'districtName',
+    'District',
+    'city',
+  ]);
 
-  // 1. Read background template from public folder
+  const teamName = getFieldValue([
+    'team_name',
+    'teamName',
+    'team',
+    'Team',
+  ]) || 'State HQ Team';
+
+  const coordinator = getFieldValue([
+    'coordinator',
+    'coordinator_name',
+    'coordinatorName',
+    'Coordinator',
+  ]);
+
+  const phone = getFieldValue([
+    'phone',
+    'phone_number',
+    'phoneNumber',
+    'mobile',
+    'mobile_number',
+    'Mobile',
+    'Contact',
+  ]);
+
+  const photoUrl = getFieldValue([
+    'photo_url',
+    'photoUrl',
+    'photo',
+    'avatar_url',
+    'Photo',
+  ]);
+
+  // 1. Read template from public folder
   let backgroundBase64 = '';
+  const publicDir = path.join(process.cwd(), 'public');
   try {
-    const publicDir = path.join(process.cwd(), 'public');
     let templatePath = path.join(publicDir, 'id-template.png');
     let contentType = 'image/png';
 
@@ -59,9 +128,9 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     console.error('Failed to load background template:', e);
   }
 
-  // 2. Fetch member photo as base64 URI
+  // 2. Fetch photo as Base64 Data URI
   let photoBase64 = '';
-  if (photoUrl && String(photoUrl).startsWith('http')) {
+  if (photoUrl && photoUrl.startsWith('http')) {
     try {
       const imgRes = await fetch(photoUrl);
       if (imgRes.ok) {
@@ -75,8 +144,7 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     }
   }
 
-  // Helper function to sanitize text for SVG
-  const escapeSvgText = (str: string) =>
+  const escapeXml = (str: string) =>
     str
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -84,27 +152,9 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&apos;');
 
-  // 3. Build SVG overlay with raw system fonts (sans-serif)
+  // 3. SVG Overlay with direct SVG styling
   const svgString = `
     <svg width="1024" height="654" viewBox="0 0 1024 654" xmlns="http://www.w3.org/2000/svg">
-      <style>
-        .card-text {
-          font-family: sans-serif, serif;
-          font-weight: 700;
-          fill: #000000;
-        }
-        .highlight-text {
-          font-family: sans-serif, serif;
-          font-weight: 700;
-          fill: #C00000;
-        }
-        .phone-text {
-          font-family: sans-serif, serif;
-          font-weight: 700;
-          fill: #0056B3;
-        }
-      </style>
-
       <!-- Background Template -->
       ${
         backgroundBase64
@@ -119,44 +169,42 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
           : ''
       }
 
-      <!-- Text overlay directly on top of template underline space (x="330") -->
-      <!-- Name / ಹೆಸರು -->
-      <text x="330" y="250" font-size="18" class="card-text">${escapeSvgText(fullName)}</text>
+      <!-- Member Details Overlay (Positioned directly on top of the blank lines, starting x="330") -->
+      <g font-family="DejaVu Sans, Arial, sans-serif" font-weight="bold" fill="#000000">
+        <!-- Name / ಹೆಸರು -->
+        <text x="330" y="250" font-size="18">${escapeXml(fullName)}</text>
 
-      <!-- DOB / ಜನ್ಮ ದಿನಾಂಕ -->
-      <text x="330" y="287" font-size="17" class="card-text">${escapeSvgText(dob)}</text>
+        <!-- DOB / ಜನ್ಮ ದಿನಾಂಕ -->
+        <text x="330" y="287" font-size="17">${escapeXml(dob)}</text>
 
-      <!-- Gender / ಲಿಂಗ -->
-      <text x="330" y="324" font-size="17" class="card-text">${escapeSvgText(gender)}</text>
+        <!-- Gender / ಲಿಂಗ -->
+        <text x="330" y="324" font-size="17">${escapeXml(gender)}</text>
 
-      <!-- Temporary ID / ತಾತ್ಕಾಲಿಕ ಐಡಿ -->
-      <text x="330" y="361" font-size="17" class="highlight-text">${escapeSvgText(tempId)}</text>
+        <!-- Temporary ID / ತಾತ್ಕಾಲಿಕ ಐಡಿ -->
+        <text x="330" y="361" font-size="17" fill="#C00000">${escapeXml(tempId)}</text>
 
-      <!-- District / ಜಿಲ್ಲೆ -->
-      <text x="330" y="398" font-size="17" class="card-text">${escapeSvgText(district)}</text>
+        <!-- District / ಜಿಲ್ಲೆ -->
+        <text x="330" y="398" font-size="17">${escapeXml(district)}</text>
 
-      <!-- Team Name / ತಂಡದ ಹೆಸರು -->
-      <text x="330" y="435" font-size="17" class="card-text">${escapeSvgText(teamName)}</text>
+        <!-- Team Name / ತಂಡದ ಹೆಸರು -->
+        <text x="330" y="435" font-size="17">${escapeXml(teamName)}</text>
 
-      <!-- Coordinator / ಸಂಯೋಜಕ -->
-      <text x="330" y="472" font-size="17" class="card-text">${escapeSvgText(coordinator)}</text>
+        <!-- Coordinator / ಸಂಯೋಜಕ -->
+        <text x="330" y="472" font-size="17">${escapeXml(coordinator)}</text>
 
-      <!-- Contact Number / ಸಂಪರ್ಕ ಸಂಖ್ಯೆ -->
-      <text x="330" y="509" font-size="18" class="phone-text">${escapeSvgText(phone)}</text>
+        <!-- Contact Number / ಸಂಪರ್ಕ ಸಂಖ್ಯೆ -->
+        <text x="330" y="509" font-size="18" fill="#0056B3">${escapeXml(phone)}</text>
+      </g>
     </svg>
   `;
 
-  // 4. Dynamically import Resvg and pass default system font configuration
+  // 4. Render PNG with Resvg
   const { Resvg } = await import('@resvg/resvg-js');
 
   const resvg = new Resvg(svgString, {
     fitTo: {
       mode: 'width',
       value: 1024,
-    },
-    font: {
-      loadSystemFonts: true,
-      defaultFontFamily: 'sans-serif',
     },
   });
 
