@@ -8,7 +8,6 @@
     "start": "next start"
   },
   "dependencies": {
-    "@napi-rs/canvas": "^1.0.9",
     "@resvg/resvg-js": "^2.6.2",
     "@supabase/supabase-js": "^2.112.4",
     "docx": "^9.7.1",

@@ -1,5 +1,16 @@
 import path from 'path';
 import fs from 'fs';
+import sharp from 'sharp';
+
+function escapeXml(str: string): string {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
 
 function getMemberValue(member: any, keys: string[], fallback: string = ''): string {
   if (!member || typeof member !== 'object') return fallback;
@@ -26,38 +37,32 @@ function getMemberValue(member: any, keys: string[], fallback: string = ''): str
 export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   if (!member) member = {};
 
-  // Dynamic import to prevent Turbopack native binary bundling errors
-  const { createCanvas, loadImage, GlobalFonts } = await import('@napi-rs/canvas');
-
-  // Register font safely
   const publicDir = path.join(process.cwd(), 'public');
-  const fontPath = path.join(publicDir, 'Roboto-Bold.ttf');
-  let fontRegistered = false;
 
-  if (fs.existsSync(fontPath)) {
-    GlobalFonts.registerFromPath(fontPath, 'Roboto');
-    fontRegistered = true;
-  }
-
-  // Create canvas matching template dimensions (1024x654)
-  const canvas = createCanvas(1024, 654);
-  const ctx = canvas.getContext('2d');
-
-  // 1. Draw Background Template
+  // 1. Load background template
   let templatePath = path.join(publicDir, 'id-template.png');
   if (!fs.existsSync(templatePath)) {
     templatePath = path.join(publicDir, 'id-template.jpg');
   }
 
+  let baseImageBuffer: Buffer;
   if (fs.existsSync(templatePath)) {
-    const bgImage = await loadImage(templatePath);
-    ctx.drawImage(bgImage, 0, 0, 1024, 654);
+    baseImageBuffer = fs.readFileSync(templatePath);
   } else {
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, 1024, 654);
+    // White 1024x654 canvas fallback
+    baseImageBuffer = await sharp({
+      create: {
+        width: 1024,
+        height: 654,
+        channels: 4,
+        background: { r: 255, g: 255, b: 255, alpha: 1 },
+      },
+    })
+      .png()
+      .toBuffer();
   }
 
-  // 2. Extract database fields
+  // 2. Extract database values
   const fullName = getMemberValue(member, ['full_name', 'fullname', 'name']);
   const dob = getMemberValue(member, ['dob', 'date_of_birth']);
   const gender = getMemberValue(member, ['gender', 'sex']);
@@ -68,63 +73,80 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   const phone = getMemberValue(member, ['phone', 'mobile']);
   const photoUrl = getMemberValue(member, ['photo_url', 'avatar_url']);
 
-  // 3. Draw Member Photo
+  // Composite elements layer array typed to avoid namespace lookups
+  const compositeLayers: Array<{ input: Buffer; top?: number; left?: number }> = [];
+
+  // 3. Process Member Photo
   if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
-      const userPhoto = await loadImage(photoUrl);
-      ctx.save();
-      ctx.beginPath();
-      ctx.roundRect(808, 242, 170, 210, 6);
-      ctx.clip();
-      ctx.drawImage(userPhoto, 808, 242, 170, 210);
-      ctx.restore();
+      const imgRes = await fetch(photoUrl);
+      if (imgRes.ok) {
+        const photoArrBuffer = await imgRes.arrayBuffer();
+        const rawPhotoBuffer = Buffer.from(photoArrBuffer);
+
+        // Crop & Resize member photo to 170x210
+        const processedPhoto = await sharp(rawPhotoBuffer)
+          .resize(170, 210, { fit: 'cover' })
+          .toBuffer();
+
+        compositeLayers.push({
+          input: processedPhoto,
+          left: 808,
+          top: 242,
+        });
+      }
     } catch (e) {
-      console.error('Failed to draw member photo:', e);
+      console.error('Failed to fetch photo:', e);
     }
   }
 
-  // 4. Render Text Overlay on Underlined Spaces (startX = 515)
-  const fontName = fontRegistered ? 'Roboto' : 'sans-serif';
+  // 4. Create SVG Overlay for Text (startX = 515)
   const startX = 540;
+  const svgTextOverlay = Buffer.from(`
+    <svg width="1024" height="654" xmlns="http://www.w3.org/2000/svg">
+      <style>
+        .bold-text {
+          font-family: Arial, Helvetica, sans-serif;
+          font-weight: bold;
+        }
+      </style>
+      <g class="bold-text">
+        <!-- Name / ಹೆಸರು -->
+        <text x="${startX}" y="246" font-size="19" fill="#000000">${escapeXml(fullName)}</text>
 
-  ctx.textBaseline = 'middle';
+        <!-- DOB / ಜನ್ಮ ದಿನಾಂಕ -->
+        <text x="${startX}" y="283" font-size="18" fill="#000000">${escapeXml(dob)}</text>
 
-  // Full Name
-  ctx.font = `bold 20px ${fontName}`;
-  ctx.fillStyle = '#000000';
-  ctx.fillText(fullName, startX, 238);
+        <!-- Gender / ಲಿಂಗ -->
+        <text x="${startX}" y="320" font-size="18" fill="#000000">${escapeXml(gender)}</text>
 
-  // DOB
-  ctx.font = `bold 18px ${fontName}`;
-  ctx.fillText(dob, startX, 275);
+        <!-- Temporary ID / ತಾತ್ಕಾಲಿಕ ಐಡಿ -->
+        <text x="${startX}" y="357" font-size="18" fill="#C00000">${escapeXml(tempId)}</text>
 
-  // Gender
-  ctx.font = `bold 18px ${fontName}`;
-  ctx.fillText(gender, startX, 312);
+        <!-- District / ಜಿಲ್ಲೆ -->
+        <text x="${startX}" y="394" font-size="18" fill="#000000">${escapeXml(district)}</text>
 
-  // Temporary ID
-  ctx.font = `bold 18px ${fontName}`;
-  ctx.fillStyle = '#C00000';
-  ctx.fillText(tempId, startX, 349);
+        <!-- Team Name / ತಂಡದ ಹೆಸರು -->
+        <text x="${startX}" y="431" font-size="16" fill="#000000">${escapeXml(teamName)}</text>
 
-  // District
-  ctx.font = `bold 18px ${fontName}`;
-  ctx.fillStyle = '#000000';
-  ctx.fillText(district, startX, 386);
+        <!-- Coordinator / ಸಂಯೋಜಕ -->
+        <text x="${startX}" y="468" font-size="16" fill="#000000">${escapeXml(coordinator)}</text>
 
-  // Team Name
-  ctx.font = `bold 16px ${fontName}`;
-  ctx.fillText(teamName, startX, 423);
+        <!-- Contact Number / ಸಂಪರ್ಕ ಸಂಖ್ಯೆ -->
+        <text x="${startX}" y="505" font-size="19" fill="#0056B3">${escapeXml(phone)}</text>
+      </g>
+    </svg>
+  `);
 
-  // Coordinator
-  ctx.font = `bold 16px ${fontName}`;
-  ctx.fillText(coordinator, startX, 460);
+  compositeLayers.push({
+    input: svgTextOverlay,
+    top: 0,
+    left: 0,
+  });
 
-  // Contact Number
-  ctx.font = `bold 19px ${fontName}`;
-  ctx.fillStyle = '#0056B3';
-  ctx.fillText(phone, startX, 497);
-
-  // 5. Export PNG Buffer
-  return canvas.toBuffer('image/png');
+  // 5. Composite photo & text onto template and produce final PNG
+  return await sharp(baseImageBuffer)
+    .composite(compositeLayers)
+    .png()
+    .toBuffer();
 }
