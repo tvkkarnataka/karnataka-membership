@@ -2,6 +2,16 @@ import path from 'path';
 import fs from 'fs';
 import sharp from 'sharp';
 
+function escapeXml(str: string): string {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 function getMemberValue(member: any, keys: string[], fallback: string = ''): string {
   if (!member || typeof member !== 'object') return fallback;
 
@@ -22,25 +32,6 @@ function getMemberValue(member: any, keys: string[], fallback: string = ''): str
   }
 
   return fallback;
-}
-
-// Create clean text image buffer using Sharp's text engine
-async function createTextImage(
-  text: string,
-  width: number,
-  height: number,
-  fontSize: number,
-  color: string = '#000000'
-): Promise<Buffer> {
-  if (!text) text = ' ';
-
-  const svg = Buffer.from(`
-    <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-      <text x="0" y="${fontSize}" font-family="DejaVu Sans, Liberation Sans, Arial, sans-serif" font-size="${fontSize}" font-weight="bold" fill="${color}">${text}</text>
-    </svg>
-  `);
-
-  return await sharp(svg).png().toBuffer();
 }
 
 export async function generateIDCardBuffer(member: any): Promise<Buffer> {
@@ -74,7 +65,14 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   const canvasWidth = metadata.width || 1600;
   const canvasHeight = metadata.height || 1022;
 
-  // 2. Extract database values
+  // 2. Read local font and convert to Base64
+  let fontBase64 = '';
+  const fontPath = path.join(publicDir, 'Roboto-Bold.ttf');
+  if (fs.existsSync(fontPath)) {
+    fontBase64 = fs.readFileSync(fontPath).toString('base64');
+  }
+
+  // 3. Extract database values
   const fullName = getMemberValue(member, ['full_name', 'fullname', 'name']);
   const dob = getMemberValue(member, ['dob', 'date_of_birth']);
   const gender = getMemberValue(member, ['gender', 'sex']);
@@ -85,9 +83,9 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
   const phone = getMemberValue(member, ['phone', 'mobile']);
   const photoUrl = getMemberValue(member, ['photo_url', 'avatar_url']);
 
-  const compositeLayers: Array<{ input: Buffer; top: number; left: number }> = [];
+  const compositeLayers: Array<{ input: Buffer; top?: number; left?: number }> = [];
 
-  // 3. Process Member Photo (Your exact box coordinates: left 1210, top 410, size 260x310)
+  // 4. Member Photo -> Verified positions (left: 1210, top: 410, size: 260x310)
   if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
       const imgRes = await fetch(photoUrl);
@@ -110,38 +108,62 @@ export async function generateIDCardBuffer(member: any): Promise<Buffer> {
     }
   }
 
-  // 4. Create individual text image buffers to bypass font rendering bugs (startX = 820)
+  // 5. SVG overlay with embedded base64 font (startX = 820)
   const startX = 820;
+  const fontFaceStyle = fontBase64
+    ? `@font-face {
+        font-family: 'EmbeddedRoboto';
+        src: url('data:font/ttf;charset=utf-8;base64,${fontBase64}') format('truetype');
+        font-weight: bold;
+      }`
+    : '';
 
-  const fields = [
-    { text: fullName, top: 355, size: 28, color: '#000000' },
-    { text: dob, top: 413, size: 26, color: '#000000' },
-    { text: gender, top: 471, size: 26, color: '#000000' },
-    { text: tempId, top: 529, size: 26, color: '#C00000' },
-    { text: district, top: 587, size: 26, color: '#000000' },
-    { text: teamName, top: 645, size: 24, color: '#000000' },
-    { text: coordinator, top: 703, size: 24, color: '#000000' },
-    { text: phone, top: 761, size: 28, color: '#0056B3' },
-  ];
+  const svgTextOverlay = Buffer.from(`
+    <svg width="${canvasWidth}" height="${canvasHeight}" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <style>
+          ${fontFaceStyle}
+          .bold-val {
+            font-family: 'EmbeddedRoboto', Arial, sans-serif;
+            font-weight: bold;
+          }
+        </style>
+      </defs>
+      <g class="bold-val">
+        <!-- Name / ಹೆಸರು -->
+        <text x="${startX}" y="385" font-size="28" fill="#000000">${escapeXml(fullName)}</text>
 
-  for (const field of fields) {
-    if (field.text) {
-      const textImg = await createTextImage(
-        field.text,
-        380,
-        field.size + 15,
-        field.size,
-        field.color
-      );
-      compositeLayers.push({
-        input: textImg,
-        left: startX,
-        top: field.top,
-      });
-    }
-  }
+        <!-- DOB / ಜನ್ಮ ದಿನಾಂಕ -->
+        <text x="${startX}" y="443" font-size="26" fill="#000000">${escapeXml(dob)}</text>
 
-  // 5. Composite photo & text layers onto base template
+        <!-- Gender / ಲಿಂಗ -->
+        <text x="${startX}" y="501" font-size="26" fill="#000000">${escapeXml(gender)}</text>
+
+        <!-- Temporary ID / ತಾತ್ಕಾಲಿಕ ಐಡಿ -->
+        <text x="${startX}" y="559" font-size="26" fill="#C00000">${escapeXml(tempId)}</text>
+
+        <!-- District / ಜಿಲ್ಲೆ -->
+        <text x="${startX}" y="617" font-size="26" fill="#000000">${escapeXml(district)}</text>
+
+        <!-- Team Name / ತಂಡದ ಹೆಸರು -->
+        <text x="${startX}" y="675" font-size="24" fill="#000000">${escapeXml(teamName)}</text>
+
+        <!-- Coordinator / ಸಂಯೋಜಕ -->
+        <text x="${startX}" y="733" font-size="24" fill="#000000">${escapeXml(coordinator)}</text>
+
+        <!-- Contact Number / ಸಂಪರ್ಕ ಸಂಖ್ಯೆ -->
+        <text x="${startX}" y="791" font-size="28" fill="#0056B3">${escapeXml(phone)}</text>
+      </g>
+    </svg>
+  `);
+
+  compositeLayers.push({
+    input: svgTextOverlay,
+    top: 0,
+    left: 0,
+  });
+
+  // 6. Composite photo & text onto base template
   return await sharp(baseImageBuffer)
     .composite(compositeLayers)
     .png()
