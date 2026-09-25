@@ -21,7 +21,9 @@
     "pg": "^8.23.0",
     "qrcode": "^1.5.4",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "satori": "^0.33.5",
+    "sharp": "^0.35.4"
   },
   "devDependencies": {
     "@netlify/plugin-nextjs": "^5.16.0",
