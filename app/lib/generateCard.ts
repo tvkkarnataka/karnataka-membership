@@ -1,44 +1,32 @@
 import path from 'path';
 import fs from 'fs';
-import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
 
-let fontRegistered = false;
-
-async function setupFont() {
-  if (fontRegistered) return;
-  try {
-    const fontRes = await fetch(
-      'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-700-normal.ttf'
-    );
-    if (fontRes.ok) {
-      const arrayBuf = await fontRes.arrayBuffer();
-      GlobalFonts.register(Buffer.from(arrayBuf), 'CardRoboto');
-      fontRegistered = true;
-    }
-  } catch (err) {
-    console.error('Failed to load font:', err);
-  }
+// Helper to escape special XML characters for SVG text
+function escapeXml(str: string): string {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }
 
-// Helper to deeply extract a string from member object matching possible key patterns
-function findFieldValue(obj: any, candidates: string[], fallback: string): string {
-  if (!obj || typeof obj !== 'object') return fallback;
+// Deep field extraction to guarantee values are never blank
+function getMemberValue(member: any, keys: string[], fallback: string = ''): string {
+  if (!member || typeof member !== 'object') return fallback;
 
-  // Flatten nested objects if Supabase returned data wrapped in raw user metadata
-  const source = obj.raw_user_meta_data || obj.metadata || obj.data || obj;
-
-  // Direct match
-  for (const key of candidates) {
-    if (source[key] !== undefined && source[key] !== null && String(source[key]).trim() !== '') {
-      return String(source[key]).trim();
+  for (const k of keys) {
+    if (member[k] !== undefined && member[k] !== null && String(member[k]).trim() !== '') {
+      return String(member[k]).trim();
     }
   }
 
-  // Fuzzy case-insensitive match across all keys in object
-  const lowerCandidates = candidates.map((c) => c.toLowerCase());
-  for (const k of Object.keys(source)) {
-    if (lowerCandidates.includes(k.toLowerCase())) {
-      const val = source[k];
+  // Case-insensitive search across object keys
+  const lowerKeys = keys.map((k) => k.toLowerCase());
+  for (const key of Object.keys(member)) {
+    if (lowerKeys.includes(key.toLowerCase())) {
+      const val = member[key];
       if (val !== undefined && val !== null && String(val).trim() !== '') {
         return String(val).trim();
       }
@@ -49,87 +37,130 @@ function findFieldValue(obj: any, candidates: string[], fallback: string): strin
 }
 
 export async function generateIDCardBuffer(member: any): Promise<Buffer> {
-  console.log('--- DB RECORD DEBUG ---');
-  console.log(JSON.stringify(member, null, 2));
+  if (!member) member = {};
 
-  await setupFont();
+  // Extract registered values
+  const fullName = getMemberValue(member, ['full_name', 'fullname', 'name', 'member_name', 'Name'], 'Member Name');
+  const dob = getMemberValue(member, ['dob', 'date_of_birth', 'birth_date', 'DOB'], 'N/A');
+  const gender = getMemberValue(member, ['gender', 'sex', 'Gender'], 'N/A');
+  const tempId = getMemberValue(member, ['membership_id', 'temporary_id', 'id', 'member_id', 'ID'], 'TVK-2026-001');
+  const district = getMemberValue(member, ['district', 'city', 'location', 'District'], 'Karnataka');
+  const teamName = getMemberValue(member, ['team_name', 'team', 'Team'], 'State HQ Team');
+  const coordinator = getMemberValue(member, ['coordinator', 'coordinator_name', 'Coordinator'], 'N/A');
+  const phone = getMemberValue(member, ['phone', 'phone_number', 'mobile', 'Phone'], 'N/A');
+  const photoUrl = getMemberValue(member, ['photo_url', 'photoUrl', 'photo', 'avatar_url', 'Photo'], '');
 
-  // Extract fields with realistic fallback defaults so details NEVER show blank
-  const fullName = findFieldValue(member, ['full_name', 'fullname', 'name', 'member_name', 'Name'], 'Member Name');
-  const dob = findFieldValue(member, ['dob', 'date_of_birth', 'birth_date', 'DOB'], 'DD/MM/YYYY');
-  const gender = findFieldValue(member, ['gender', 'sex', 'Gender'], 'Male');
-  const tempId = findFieldValue(member, ['membership_id', 'temporary_id', 'id', 'member_id', 'ID'], 'TVK-2026-001');
-  const district = findFieldValue(member, ['district', 'city', 'location', 'District'], 'Karnataka');
-  const teamName = findFieldValue(member, ['team_name', 'team', 'Team'], 'State HQ Team');
-  const coordinator = findFieldValue(member, ['coordinator', 'coordinator_name', 'Coordinator'], 'HQ Coordinator');
-  const phone = findFieldValue(member, ['phone', 'phone_number', 'mobile', 'Phone', 'contact'], 'N/A');
-  
-  const photoUrl = findFieldValue(member, ['photo_url', 'photoUrl', 'photo', 'avatar_url', 'Photo'], '');
-
-  // Initialize Canvas
-  const canvas = createCanvas(1024, 654);
-  const ctx = canvas.getContext('2d');
-
-  // Load Background Template
+  // 1. Read background template from public folder
+  let backgroundBase64 = '';
   const publicDir = path.join(process.cwd(), 'public');
-  let templatePath = path.join(publicDir, 'id-template.png');
-  if (!fs.existsSync(templatePath)) {
-    templatePath = path.join(publicDir, 'id-template.jpg');
+  try {
+    let templatePath = path.join(publicDir, 'id-template.png');
+    let contentType = 'image/png';
+
+    if (!fs.existsSync(templatePath)) {
+      templatePath = path.join(publicDir, 'id-template.jpg');
+      contentType = 'image/jpeg';
+    }
+
+    if (fs.existsSync(templatePath)) {
+      const templateBuffer = fs.readFileSync(templatePath);
+      backgroundBase64 = `data:${contentType};base64,${templateBuffer.toString('base64')}`;
+    }
+  } catch (e) {
+    console.error('Failed to load background template:', e);
   }
 
-  if (fs.existsSync(templatePath)) {
-    const templateImg = await loadImage(templatePath);
-    ctx.drawImage(templateImg, 0, 0, 1024, 654);
-  } else {
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, 1024, 654);
-  }
-
-  // Load Member Photo
+  // 2. Fetch member photo as Base64 Data URI
+  let photoBase64 = '';
   if (photoUrl && String(photoUrl).startsWith('http')) {
     try {
-      const photoImg = await loadImage(photoUrl);
-      ctx.drawImage(photoImg, 808, 242, 170, 210);
+      const imgRes = await fetch(photoUrl);
+      if (imgRes.ok) {
+        const arrayBuffer = await imgRes.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const type = imgRes.headers.get('content-type') || 'image/png';
+        photoBase64 = `data:${type};base64,${buffer.toString('base64')}`;
+      }
     } catch (err) {
-      console.error('Failed to load photo:', err);
+      console.error('Failed to fetch photo URL:', err);
     }
   }
 
-  // Configure Text Drawing
-  const font = fontRegistered ? 'CardRoboto' : 'sans-serif';
-  ctx.font = `700 18px ${font}`;
-  ctx.textBaseline = 'middle';
+  // 3. Load or fetch TTF Font Buffer for SVG text rendering
+  let fontBuffer: Buffer | null = null;
+  try {
+    const fontRes = await fetch(
+      'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-700-normal.ttf'
+    );
+    if (fontRes.ok) {
+      const fontArray = await fontRes.arrayBuffer();
+      fontBuffer = Buffer.from(fontArray);
+    }
+  } catch (e) {
+    console.error('Failed to fetch font for resvg:', e);
+  }
 
-  const startX = 330;
+  // 4. Build SVG string with coordinates overlaying the underline space
+  const svgString = `
+    <svg width="1024" height="654" viewBox="0 0 1024 654" xmlns="http://www.w3.org/2000/svg">
+      <!-- Background Template -->
+      ${
+        backgroundBase64
+          ? `<image x="0" y="0" width="1024" height="654" href="${backgroundBase64}" preserveAspectRatio="none"/>`
+          : `<rect width="1024" height="654" fill="#FFFFFF"/>`
+      }
 
-  // Name / ಹೆಸರು
-  ctx.fillStyle = '#000000';
-  ctx.fillText(fullName, startX, 246);
+      <!-- Centered Member Photo -->
+      ${
+        photoBase64
+          ? `<image x="808" y="242" width="170" height="210" href="${photoBase64}" preserveAspectRatio="xMidYMid slice" clip-path="inset(0px round 6px)"/>`
+          : ''
+      }
 
-  // DOB / ಜನ್ಮ ದಿನಾಂಕ
-  ctx.fillText(dob, startX, 283);
+      <!-- Text Overlay directly on template lines -->
+      <g font-family="Roboto" font-weight="bold" fill="#000000">
+        <!-- Name / ಹೆಸರು -->
+        <text x="330" y="252" font-size="18">${escapeXml(fullName)}</text>
 
-  // Gender / ಲಿಂಗ
-  ctx.fillText(gender, startX, 320);
+        <!-- DOB / ಜನ್ಮ ದಿನಾಂಕ -->
+        <text x="330" y="289" font-size="17">${escapeXml(dob)}</text>
 
-  // Temporary ID / ತಾತ್ಕಾಲಿಕ ಐಡಿ
-  ctx.fillStyle = '#C00000';
-  ctx.fillText(tempId, startX, 357);
+        <!-- Gender / ಲಿಂಗ -->
+        <text x="330" y="326" font-size="17">${escapeXml(gender)}</text>
 
-  // District / ಜಿಲ್ಲೆ
-  ctx.fillStyle = '#000000';
-  ctx.fillText(district, startX, 394);
+        <!-- Temporary ID / ತಾತ್ಕಾಲಿಕ ಐಡಿ -->
+        <text x="330" y="363" font-size="17" fill="#C00000">${escapeXml(tempId)}</text>
 
-  // Team Name / ತಂಡದ ಹೆಸರು
-  ctx.fillText(teamName, startX, 431);
+        <!-- District / ಜಿಲ್ಲೆ -->
+        <text x="330" y="400" font-size="17">${escapeXml(district)}</text>
 
-  // Coordinator / ಸಂಯೋಜಕ
-  ctx.fillText(coordinator, startX, 468);
+        <!-- Team Name / ತಂಡದ ಹೆಸರು -->
+        <text x="330" y="437" font-size="17">${escapeXml(teamName)}</text>
 
-  // Contact Number / ಸಂಪರ್ಕ ಸಂಖ್ಯೆ
-  ctx.fillStyle = '#0056B3';
-  ctx.font = `700 19px ${font}`;
-  ctx.fillText(phone, startX, 505);
+        <!-- Coordinator / ಸಂಯೋಜಕ -->
+        <text x="330" y="474" font-size="17">${escapeXml(coordinator)}</text>
 
-  return canvas.toBuffer('image/png');
+        <!-- Contact Number / ಸಂಪರ್ಕ ಸಂಖ್ಯೆ -->
+        <text x="330" y="511" font-size="18" fill="#0056B3">${escapeXml(phone)}</text>
+      </g>
+    </svg>
+  `;
+
+  // 5. Render PNG with Resvg
+  const { Resvg } = await import('@resvg/resvg-js');
+
+  const resvgOptions: any = {
+    fitTo: { mode: 'width', value: 1024 },
+  };
+
+  if (fontBuffer) {
+    resvgOptions.font = {
+      fontBuffers: [fontBuffer],
+      defaultFontFamily: 'Roboto',
+    };
+  }
+
+  const resvg = new Resvg(svgString, resvgOptions);
+  const pngData = resvg.render();
+  return Buffer.from(pngData.asPng());
 }

@@ -5,7 +5,7 @@ import { generateIDCardBuffer } from '../../lib/generateCard';
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
-    const phone = url.searchParams.get('phone');
+    const rawPhone = url.searchParams.get('phone') || '';
     const secret = url.searchParams.get('secret');
 
     const expectedSecret = process.env.ADMIN_SECRET_KEY || 'Tvk_ka_hq_2026';
@@ -13,9 +13,12 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 401 });
     }
 
-    if (!phone) {
-      return NextResponse.json({ error: 'Phone number parameter is required' }, { status: 400 });
+    if (!rawPhone) {
+      return NextResponse.json({ error: 'Phone parameter is required' }, { status: 400 });
     }
+
+    // Clean phone input to match digits
+    const cleanPhone = rawPhone.replace(/\D/g, '');
 
     const supabaseUrl =
       process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -27,35 +30,48 @@ export async function GET(req: Request) {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Query the exact column in your schema directly ('phone')
-    const { data: member, error } = await supabase
+    // 1. First try exact match on 'phone'
+    let { data: member, error } = await supabase
       .from('members')
       .select('*')
-      .eq('phone', phone)
+      .eq('phone', rawPhone)
       .maybeSingle();
+
+    // 2. Fallback: Search with wildcards if clean phone exists
+    if (!member && cleanPhone) {
+      const { data: fallbackMembers } = await supabase
+        .from('members')
+        .select('*')
+        .like('phone', `%${cleanPhone.slice(-10)}%`)
+        .limit(1);
+
+      if (fallbackMembers && fallbackMembers.length > 0) {
+        member = fallbackMembers[0];
+      }
+    }
 
     if (error) {
       return NextResponse.json(
-        { error: `Database query failed: ${error.message}` },
+        { error: `Database error: ${error.message}` },
         { status: 500 }
       );
     }
 
     if (!member) {
       return NextResponse.json(
-        { error: `Member with phone number ${phone} not found` },
+        { error: `No member record found for phone: ${rawPhone}` },
         { status: 404 }
       );
     }
 
-    // Generate ID card PNG buffer
+    // Generate card buffer
     const imageBuffer = await generateIDCardBuffer(member);
 
     return new NextResponse(new Uint8Array(imageBuffer), {
       status: 200,
       headers: {
         'Content-Type': 'image/png',
-        'Content-Disposition': `inline; filename="ID_Card_${phone}.png"`,
+        'Content-Disposition': `inline; filename="ID_Card_${rawPhone}.png"`,
         'Cache-Control': 'no-store, max-age=0',
       },
     });
